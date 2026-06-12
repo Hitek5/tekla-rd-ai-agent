@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tekla/RD AI Agent Docs</title>
+  <style>
+    body {
+      margin: 0;
+      background: #f6f8fb;
+      color: #172033;
+      font-family: Arial, Helvetica, sans-serif;
+      line-height: 1.55;
+    }
+
+    main {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 40px 22px;
+    }
+
+    header,
+    section {
+      background: #fff;
+      border: 1px solid #d7dde8;
+      border-radius: 8px;
+      padding: 24px;
+      margin-bottom: 18px;
+    }
+
+    h1 {
+      margin: 0 0 10px;
+      font-size: 32px;
+      letter-spacing: 0;
+    }
+
+    h2 {
+      margin: 0 0 12px;
+      font-size: 22px;
+      letter-spacing: 0;
+    }
+
+    a {
+      color: #1d4ed8;
+      text-decoration: none;
+      font-weight: 700;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    .lead {
+      color: #596779;
+      margin: 0;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .card {
+      border: 1px solid #d7dde8;
+      border-radius: 8px;
+      padding: 16px;
+      background: #fbfdff;
+    }
+
+    .card p {
+      color: #596779;
+      margin-bottom: 0;
+    }
+
+    @media (max-width: 720px) {
+      .grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Tekla/RD AI Agent Docs</h1>
+      <p class="lead">Публичная документация по MVP локального ИИ-агента для Tekla/RD.</p>
+    </header>
+    <section>
+      <h2>Основные документы</h2>
+      <div class="grid">
+        <article class="card">
+          <a href="industrial-rollout-plan.html">Пошаговый план внедрения</a>
+          <p>Организационная дорожная карта от инициативы до промышленной эксплуатации.</p>
+        </article>
+        <article class="card">
+          <a href="architecture.md">Architecture</a>
+          <p>Описание runtime-архитектуры и границ компонентов.</p>
+        </article>
+        <article class="card">
+          <a href="deployment-runbook.md">Deployment Runbook</a>
+          <p>Базовые шаги подготовки GPU-сервера и MVP-сервисов.</p>
+        </article>
+        <article class="card">
+          <a href="security-policy.md">Security Policy</a>
+          <p>Правила approval, audit и ограничений на действия агента.</p>
+        </article>
+      </div>
+    </section>
+  </main>
+</body>
+</html>
+
