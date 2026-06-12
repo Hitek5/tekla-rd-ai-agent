@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" id="Definitions_RagIngestion" targetNamespace="https://github.com/Hitek5/tekla-rd-ai-agent/bpmn">
+  <bpmn:process id="Process_RagIngestion" name="RAG corpus ingestion and verification" isExecutable="false">
+    <bpmn:startEvent id="Start_NewSource" name="New source proposed">
+      <bpmn:outgoing>Flow_Start_To_Register</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:userTask id="Task_RegisterSource" name="Register source, owner, license and Tekla version">
+      <bpmn:incoming>Flow_Start_To_Register</bpmn:incoming>
+      <bpmn:outgoing>Flow_Register_To_Security</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:businessRuleTask id="Task_SecurityReview" name="Security and confidentiality review">
+      <bpmn:incoming>Flow_Register_To_Security</bpmn:incoming>
+      <bpmn:outgoing>Flow_Security_To_Gateway</bpmn:outgoing>
+    </bpmn:businessRuleTask>
+    <bpmn:exclusiveGateway id="Gateway_SourceAllowed" name="Allowed for RAG?">
+      <bpmn:incoming>Flow_Security_To_Gateway</bpmn:incoming>
+      <bpmn:outgoing>Flow_Blocked_To_End</bpmn:outgoing>
+      <bpmn:outgoing>Flow_Allowed_To_Extract</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:endEvent id="End_SourceBlocked" name="Source blocked">
+      <bpmn:incoming>Flow_Blocked_To_End</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:serviceTask id="Task_ExtractText" name="Extract text and code snippets">
+      <bpmn:incoming>Flow_Allowed_To_Extract</bpmn:incoming>
+      <bpmn:outgoing>Flow_Extract_To_Chunk</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:serviceTask id="Task_Chunk" name="Chunk source and attach metadata">
+      <bpmn:incoming>Flow_Extract_To_Chunk</bpmn:incoming>
+      <bpmn:outgoing>Flow_Chunk_To_Review</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:userTask id="Task_EngineerReview" name="Engineer verifies examples and marks status">
+      <bpmn:incoming>Flow_Chunk_To_Review</bpmn:incoming>
+      <bpmn:outgoing>Flow_Review_To_Index</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:serviceTask id="Task_Index" name="Publish chunks to JSONL or Qdrant index">
+      <bpmn:incoming>Flow_Review_To_Index</bpmn:incoming>
+      <bpmn:outgoing>Flow_Index_To_Eval</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:serviceTask id="Task_RunEval" name="Run retrieval and safety eval">
+      <bpmn:incoming>Flow_Index_To_Eval</bpmn:incoming>
+      <bpmn:outgoing>Flow_Eval_To_End</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:endEvent id="End_SourceReady" name="Source ready for MVP retrieval">
+      <bpmn:incoming>Flow_Eval_To_End</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="Flow_Start_To_Register" sourceRef="Start_NewSource" targetRef="Task_RegisterSource" />
+    <bpmn:sequenceFlow id="Flow_Register_To_Security" sourceRef="Task_RegisterSource" targetRef="Task_SecurityReview" />
+    <bpmn:sequenceFlow id="Flow_Security_To_Gateway" sourceRef="Task_SecurityReview" targetRef="Gateway_SourceAllowed" />
+    <bpmn:sequenceFlow id="Flow_Blocked_To_End" name="No" sourceRef="Gateway_SourceAllowed" targetRef="End_SourceBlocked" />
+    <bpmn:sequenceFlow id="Flow_Allowed_To_Extract" name="Yes" sourceRef="Gateway_SourceAllowed" targetRef="Task_ExtractText" />
+    <bpmn:sequenceFlow id="Flow_Extract_To_Chunk" sourceRef="Task_ExtractText" targetRef="Task_Chunk" />
+    <bpmn:sequenceFlow id="Flow_Chunk_To_Review" sourceRef="Task_Chunk" targetRef="Task_EngineerReview" />
+    <bpmn:sequenceFlow id="Flow_Review_To_Index" sourceRef="Task_EngineerReview" targetRef="Task_Index" />
+    <bpmn:sequenceFlow id="Flow_Index_To_Eval" sourceRef="Task_Index" targetRef="Task_RunEval" />
+    <bpmn:sequenceFlow id="Flow_Eval_To_End" sourceRef="Task_RunEval" targetRef="End_SourceReady" />
+  </bpmn:process>
+</bpmn:definitions>
+

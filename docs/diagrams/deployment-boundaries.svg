@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="640" viewBox="0 0 1180 640" role="img" aria-labelledby="title desc">
+  <title id="title">Deployment boundaries for closed-contour rollout</title>
+  <desc id="desc">Deployment boundary diagram covering internet preparation, transfer bundle, closed KSPD server and Tekla workstations.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#334155"/>
+    </marker>
+    <style>
+      .bg { fill: #f8fafc; }
+      .zone { fill: #ffffff; stroke: #cbd5e1; stroke-width: 2; rx: 14; }
+      .outside { fill: #fff1f2; stroke: #e11d48; stroke-width: 2; rx: 12; }
+      .bundle { fill: #fef9c3; stroke: #ca8a04; stroke-width: 2; rx: 12; }
+      .inside { fill: #ecfdf5; stroke: #16a34a; stroke-width: 2; rx: 12; }
+      .client { fill: #eff6ff; stroke: #2563eb; stroke-width: 2; rx: 12; }
+      .title { font: 700 17px Arial, sans-serif; fill: #0f172a; }
+      .text { font: 13px Arial, sans-serif; fill: #334155; }
+      .small { font: 12px Arial, sans-serif; fill: #475569; }
+      .line { stroke: #334155; stroke-width: 2; fill: none; marker-end: url(#arrow); }
+      .dashed { stroke-dasharray: 7 6; }
+    </style>
+  </defs>
+  <rect class="bg" width="1180" height="640"/>
+  <text x="40" y="44" class="title">Deployment boundaries: internet preparation and closed-contour operation</text>
+  <text x="40" y="68" class="text">All external artifacts are prepared, checked and transferred before the KSPD environment runs offline.</text>
+
+  <rect class="zone" x="40" y="110" width="310" height="440"/>
+  <text x="70" y="145" class="title">Internet-side preparation</text>
+  <rect class="outside" x="75" y="180" width="235" height="70"/>
+  <text x="96" y="208" class="title">Public sources</text>
+  <text x="96" y="232" class="small">GitHub, PyPI, OCI, HF, docs</text>
+  <rect class="outside" x="75" y="300" width="235" height="70"/>
+  <text x="96" y="328" class="title">Security review</text>
+  <text x="96" y="352" class="small">Licenses, hashes, malware checks</text>
+  <rect class="outside" x="75" y="420" width="235" height="70"/>
+  <text x="96" y="448" class="title">Freeze versions</text>
+  <text x="96" y="472" class="small">Manifest + SHA256SUMS</text>
+
+  <rect class="zone" x="435" y="110" width="310" height="440"/>
+  <text x="465" y="145" class="title">Transfer package</text>
+  <rect class="bundle" x="470" y="195" width="235" height="230"/>
+  <text x="496" y="228" class="title">airgap-bundle</text>
+  <text x="496" y="260" class="text">docker/*.tar</text>
+  <text x="496" y="286" class="text">python/wheels</text>
+  <text x="496" y="312" class="text">nuget/packages</text>
+  <text x="496" y="338" class="text">models/manifest.json</text>
+  <text x="496" y="364" class="text">git/*.bundle</text>
+  <text x="496" y="390" class="text">checksums/SHA256SUMS</text>
+
+  <rect class="zone" x="830" y="110" width="310" height="440"/>
+  <text x="860" y="145" class="title">KSPD closed contour</text>
+  <rect class="inside" x="865" y="180" width="235" height="80"/>
+  <text x="886" y="210" class="title">Internal mirrors</text>
+  <text x="886" y="235" class="small">OCI, PyPI, NuGet, Git, models</text>
+  <rect class="inside" x="865" y="300" width="235" height="80"/>
+  <text x="886" y="330" class="title">GPU server</text>
+  <text x="886" y="355" class="small">LLM, RAG, orchestrator, audit</text>
+  <rect class="client" x="865" y="420" width="235" height="80"/>
+  <text x="886" y="450" class="title">Tekla workstations</text>
+  <text x="886" y="475" class="small">Local host + copied models</text>
+
+  <path class="line" d="M 192 250 L 192 300"/>
+  <path class="line" d="M 192 370 L 192 420"/>
+  <path class="line" d="M 310 455 C 375 455, 390 310, 470 310"/>
+  <text x="357" y="398" class="small">export</text>
+  <path class="line dashed" d="M 705 310 C 785 310, 785 220, 865 220"/>
+  <text x="764" y="238" class="small">import</text>
+  <path class="line" d="M 982 260 L 982 300"/>
+  <path class="line" d="M 982 380 L 982 420"/>
+</svg>
+

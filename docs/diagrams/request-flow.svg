@@ -1,0 +1,91 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="680" viewBox="0 0 1180 680" role="img" aria-labelledby="title desc">
+  <title id="title">Request flow with approval gates</title>
+  <desc id="desc">Sequence-like diagram showing how a user request becomes a safe Tekla tool call.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#334155"/>
+    </marker>
+    <style>
+      .bg { fill: #fbfdff; }
+      .actor { fill: #e0f2fe; stroke: #0284c7; stroke-width: 2; rx: 8; }
+      .step { fill: #ffffff; stroke: #94a3b8; stroke-width: 2; rx: 8; }
+      .gate { fill: #fff7ed; stroke: #ea580c; stroke-width: 2; }
+      .blocked { fill: #fee2e2; stroke: #dc2626; stroke-width: 2; rx: 8; }
+      .ok { fill: #dcfce7; stroke: #16a34a; stroke-width: 2; rx: 8; }
+      .title { font: 700 17px Arial, sans-serif; fill: #0f172a; }
+      .text { font: 13px Arial, sans-serif; fill: #334155; }
+      .small { font: 12px Arial, sans-serif; fill: #475569; }
+      .line { stroke: #334155; stroke-width: 2; fill: none; marker-end: url(#arrow); }
+    </style>
+  </defs>
+  <rect class="bg" width="1180" height="680"/>
+  <text x="40" y="44" class="title">Main request flow: from natural language to controlled Tekla action</text>
+  <text x="40" y="68" class="text">Read-only requests execute directly; mutating requests stop at dry-run until an engineer approves.</text>
+
+  <rect class="actor" x="50" y="115" width="160" height="60"/>
+  <text x="76" y="150" class="title">Engineer</text>
+
+  <rect class="step" x="270" y="115" width="190" height="60"/>
+  <text x="294" y="141" class="title">Orchestrator</text>
+  <text x="294" y="161" class="small">Normalize request</text>
+
+  <rect class="step" x="520" y="115" width="190" height="60"/>
+  <text x="544" y="141" class="title">RAG</text>
+  <text x="544" y="161" class="small">Retrieve context</text>
+
+  <rect class="step" x="770" y="115" width="190" height="60"/>
+  <text x="794" y="141" class="title">LLM</text>
+  <text x="794" y="161" class="small">Answer or tool plan</text>
+
+  <path class="line" d="M 210 145 L 270 145"/>
+  <path class="line" d="M 460 145 L 520 145"/>
+  <path class="line" d="M 710 145 L 770 145"/>
+
+  <polygon class="gate" points="865,245 960,310 865,375 770,310"/>
+  <text x="820" y="302" class="title">Tool?</text>
+  <text x="805" y="325" class="small">yes / no</text>
+
+  <path class="line" d="M 865 175 L 865 245"/>
+
+  <rect class="ok" x="980" y="280" width="155" height="60"/>
+  <text x="1001" y="306" class="title">Text answer</text>
+  <text x="1001" y="326" class="small">No tool needed</text>
+  <path class="line" d="M 960 310 L 980 310"/>
+
+  <rect class="step" x="520" y="280" width="190" height="60"/>
+  <text x="544" y="306" class="title">Policy</text>
+  <text x="544" y="326" class="small">Whitelist + risk level</text>
+  <path class="line" d="M 770 310 L 710 310"/>
+
+  <polygon class="gate" points="615,410 710,475 615,540 520,475"/>
+  <text x="560" y="466" class="title">Mutation?</text>
+  <text x="558" y="489" class="small">create / modify / delete</text>
+  <path class="line" d="M 615 340 L 615 410"/>
+
+  <rect class="ok" x="270" y="445" width="190" height="60"/>
+  <text x="294" y="471" class="title">Read tool</text>
+  <text x="294" y="491" class="small">Execute immediately</text>
+  <path class="line" d="M 520 475 L 460 475"/>
+
+  <polygon class="gate" points="865,410 960,475 865,540 770,475"/>
+  <text x="805" y="466" class="title">Approval?</text>
+  <text x="808" y="489" class="small">token present</text>
+  <path class="line" d="M 710 475 L 770 475"/>
+
+  <rect class="blocked" x="980" y="445" width="155" height="60"/>
+  <text x="1001" y="471" class="title">Stop</text>
+  <text x="1001" y="491" class="small">Return dry-run plan</text>
+  <path class="line" d="M 960 475 L 980 475"/>
+
+  <rect class="ok" x="770" y="585" width="190" height="60"/>
+  <text x="794" y="611" class="title">Tekla host</text>
+  <text x="794" y="631" class="small">Execute approved call</text>
+  <path class="line" d="M 865 540 L 865 585"/>
+
+  <rect class="step" x="520" y="585" width="190" height="60"/>
+  <text x="544" y="611" class="title">Audit</text>
+  <text x="544" y="631" class="small">Record decision/result</text>
+  <path class="line" d="M 770 615 L 710 615"/>
+  <path class="line" d="M 270 475 C 230 475, 230 615, 520 615"/>
+</svg>
+

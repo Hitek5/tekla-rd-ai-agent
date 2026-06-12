@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" id="Definitions_AirgapRollout" targetNamespace="https://github.com/Hitek5/tekla-rd-ai-agent/bpmn">
+  <bpmn:process id="Process_AirgapRollout" name="Air-gap bundle preparation and import" isExecutable="false">
+    <bpmn:startEvent id="Start_RolloutNeed" name="Deployment package requested">
+      <bpmn:outgoing>Flow_Start_To_Collect</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:serviceTask id="Task_CollectArtifacts" name="Collect Docker images, wheels, NuGet, Git bundles and models">
+      <bpmn:incoming>Flow_Start_To_Collect</bpmn:incoming>
+      <bpmn:outgoing>Flow_Collect_To_Checksums</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:serviceTask id="Task_WriteChecksums" name="Write manifest and SHA-256 checksums">
+      <bpmn:incoming>Flow_Collect_To_Checksums</bpmn:incoming>
+      <bpmn:outgoing>Flow_Checksums_To_Review</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:userTask id="Task_SecurityReview" name="Security reviews package content">
+      <bpmn:incoming>Flow_Checksums_To_Review</bpmn:incoming>
+      <bpmn:outgoing>Flow_Review_To_Gateway</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:exclusiveGateway id="Gateway_Approved" name="Approved for transfer?">
+      <bpmn:incoming>Flow_Review_To_Gateway</bpmn:incoming>
+      <bpmn:outgoing>Flow_NotApproved_To_Fix</bpmn:outgoing>
+      <bpmn:outgoing>Flow_Approved_To_Transfer</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:userTask id="Task_FixPackage" name="Fix package and repeat review">
+      <bpmn:incoming>Flow_NotApproved_To_Fix</bpmn:incoming>
+      <bpmn:outgoing>Flow_Fix_To_Review</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:manualTask id="Task_Transfer" name="Transfer bundle into KSPD contour">
+      <bpmn:incoming>Flow_Approved_To_Transfer</bpmn:incoming>
+      <bpmn:outgoing>Flow_Transfer_To_Verify</bpmn:outgoing>
+    </bpmn:manualTask>
+    <bpmn:serviceTask id="Task_VerifyInside" name="Verify checksums and import internal mirrors">
+      <bpmn:incoming>Flow_Transfer_To_Verify</bpmn:incoming>
+      <bpmn:outgoing>Flow_Verify_To_Deploy</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:serviceTask id="Task_DeployServices" name="Deploy LLM, RAG, orchestrator and nginx">
+      <bpmn:incoming>Flow_Verify_To_Deploy</bpmn:incoming>
+      <bpmn:outgoing>Flow_Deploy_To_Acceptance</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:serviceTask id="Task_OfflineAcceptance" name="Run offline acceptance tests">
+      <bpmn:incoming>Flow_Deploy_To_Acceptance</bpmn:incoming>
+      <bpmn:outgoing>Flow_Acceptance_To_End</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:endEvent id="End_Ready" name="Closed-contour MVP ready">
+      <bpmn:incoming>Flow_Acceptance_To_End</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="Flow_Start_To_Collect" sourceRef="Start_RolloutNeed" targetRef="Task_CollectArtifacts" />
+    <bpmn:sequenceFlow id="Flow_Collect_To_Checksums" sourceRef="Task_CollectArtifacts" targetRef="Task_WriteChecksums" />
+    <bpmn:sequenceFlow id="Flow_Checksums_To_Review" sourceRef="Task_WriteChecksums" targetRef="Task_SecurityReview" />
+    <bpmn:sequenceFlow id="Flow_Review_To_Gateway" sourceRef="Task_SecurityReview" targetRef="Gateway_Approved" />
+    <bpmn:sequenceFlow id="Flow_NotApproved_To_Fix" name="No" sourceRef="Gateway_Approved" targetRef="Task_FixPackage" />
+    <bpmn:sequenceFlow id="Flow_Fix_To_Review" sourceRef="Task_FixPackage" targetRef="Task_SecurityReview" />
+    <bpmn:sequenceFlow id="Flow_Approved_To_Transfer" name="Yes" sourceRef="Gateway_Approved" targetRef="Task_Transfer" />
+    <bpmn:sequenceFlow id="Flow_Transfer_To_Verify" sourceRef="Task_Transfer" targetRef="Task_VerifyInside" />
+    <bpmn:sequenceFlow id="Flow_Verify_To_Deploy" sourceRef="Task_VerifyInside" targetRef="Task_DeployServices" />
+    <bpmn:sequenceFlow id="Flow_Deploy_To_Acceptance" sourceRef="Task_DeployServices" targetRef="Task_OfflineAcceptance" />
+    <bpmn:sequenceFlow id="Flow_Acceptance_To_End" sourceRef="Task_OfflineAcceptance" targetRef="End_Ready" />
+  </bpmn:process>
+</bpmn:definitions>
+
