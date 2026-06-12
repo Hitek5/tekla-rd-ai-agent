@@ -1,0 +1,1076 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Пошаговый план внедрения Tekla/RD AI Agent</title>
+  <style>
+    :root {
+      --bg: #f6f8fb;
+      --paper: #ffffff;
+      --ink: #172033;
+      --muted: #596779;
+      --line: #d7dde8;
+      --accent: #0f766e;
+      --accent-2: #1d4ed8;
+      --warn: #b45309;
+      --danger: #b91c1c;
+      --ok: #15803d;
+      --soft-accent: #e7f6f3;
+      --soft-blue: #eaf2ff;
+      --soft-warn: #fff7e6;
+      --soft-danger: #fff1f2;
+      --soft-ok: #ecfdf3;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: Arial, Helvetica, sans-serif;
+      line-height: 1.55;
+    }
+
+    a {
+      color: var(--accent-2);
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    .page {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 28px 22px 80px;
+    }
+
+    header {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 28px;
+      margin-bottom: 18px;
+    }
+
+    h1 {
+      margin: 0 0 10px;
+      font-size: 34px;
+      line-height: 1.15;
+      letter-spacing: 0;
+    }
+
+    h2 {
+      margin: 34px 0 14px;
+      font-size: 24px;
+      line-height: 1.25;
+      letter-spacing: 0;
+    }
+
+    h3 {
+      margin: 22px 0 10px;
+      font-size: 18px;
+      letter-spacing: 0;
+    }
+
+    p {
+      margin: 0 0 12px;
+    }
+
+    .subtitle {
+      color: var(--muted);
+      font-size: 16px;
+      max-width: 920px;
+    }
+
+    .meta {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 22px;
+    }
+
+    .meta div {
+      background: #f8fafc;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 10px 12px;
+      min-height: 68px;
+    }
+
+    .meta strong {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      margin-bottom: 4px;
+    }
+
+    nav,
+    section {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 22px;
+      margin: 18px 0;
+    }
+
+    nav ol {
+      columns: 2;
+      margin: 0;
+      padding-left: 22px;
+    }
+
+    li {
+      margin: 5px 0;
+    }
+
+    .callout {
+      border-left: 4px solid var(--accent);
+      background: var(--soft-accent);
+      padding: 14px 16px;
+      margin: 14px 0;
+      border-radius: 6px;
+    }
+
+    .warning {
+      border-left-color: var(--warn);
+      background: var(--soft-warn);
+    }
+
+    .danger {
+      border-left-color: var(--danger);
+      background: var(--soft-danger);
+    }
+
+    .grid {
+      display: grid;
+      gap: 14px;
+    }
+
+    .grid.two {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .grid.three {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px;
+      background: #fbfdff;
+    }
+
+    .card h3 {
+      margin-top: 0;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 12px 0 18px;
+      font-size: 14px;
+    }
+
+    th,
+    td {
+      border: 1px solid var(--line);
+      padding: 10px 11px;
+      vertical-align: top;
+      text-align: left;
+    }
+
+    th {
+      background: #eef2f7;
+      font-weight: 700;
+    }
+
+    tbody tr:nth-child(even) td {
+      background: #fbfcfe;
+    }
+
+    .tag {
+      display: inline-block;
+      border-radius: 999px;
+      padding: 2px 8px;
+      font-size: 12px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .tag.ok {
+      background: var(--soft-ok);
+      color: var(--ok);
+    }
+
+    .tag.warn {
+      background: var(--soft-warn);
+      color: var(--warn);
+    }
+
+    .tag.blue {
+      background: var(--soft-blue);
+      color: var(--accent-2);
+    }
+
+    .tag.danger {
+      background: var(--soft-danger);
+      color: var(--danger);
+    }
+
+    .timeline {
+      display: grid;
+      grid-template-columns: 150px 1fr;
+      gap: 0;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+      margin: 14px 0;
+    }
+
+    .timeline .time {
+      background: #eef2f7;
+      font-weight: 700;
+      padding: 14px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .timeline .item {
+      padding: 14px;
+      border-bottom: 1px solid var(--line);
+      background: #fff;
+    }
+
+    .timeline .time:last-of-type,
+    .timeline .item:last-of-type {
+      border-bottom: 0;
+    }
+
+    .phase-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 10px;
+      margin-bottom: 14px;
+    }
+
+    .phase-title h2 {
+      margin: 0;
+    }
+
+    .phase-title span {
+      color: var(--muted);
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .swimlane {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 10px;
+      margin: 12px 0;
+    }
+
+    .lane {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px;
+      background: #fff;
+      min-height: 120px;
+    }
+
+    .lane strong {
+      display: block;
+      margin-bottom: 8px;
+      color: var(--accent);
+    }
+
+    .small {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .print-note {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    @media (max-width: 900px) {
+      .meta,
+      .grid.two,
+      .grid.three,
+      .swimlane {
+        grid-template-columns: 1fr;
+      }
+
+      nav ol {
+        columns: 1;
+      }
+
+      .timeline {
+        grid-template-columns: 1fr;
+      }
+
+      .timeline .time {
+        border-bottom: 0;
+      }
+    }
+
+    @media print {
+      body {
+        background: #fff;
+      }
+
+      .page {
+        max-width: none;
+        padding: 0;
+      }
+
+      header,
+      nav,
+      section {
+        border: 1px solid #bbb;
+        break-inside: avoid;
+      }
+
+      a {
+        color: #000;
+        text-decoration: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header>
+      <h1>Пошаговый план внедрения Tekla/RD AI Agent</h1>
+      <p class="subtitle">
+        Дорожная карта от нулевой инициативы до промышленной эксплуатации локального ИИ-агента для Tekla/RD в закрытом корпоративном контуре.
+        Документ ориентирован на управленческое согласование, запуск пилота, подготовку инфраструктуры, контроль безопасности и передачу решения в эксплуатацию.
+      </p>
+      <div class="meta">
+        <div><strong>Версия</strong>v0.1</div>
+        <div><strong>Горизонт планирования</strong>24-36 недель до промышленного запуска</div>
+        <div><strong>Режим MVP</strong>Копии моделей, dry-run, approval, audit</div>
+        <div><strong>Целевое состояние</strong>Регламентированная промышленная эксплуатация</div>
+      </div>
+    </header>
+
+    <nav>
+      <h2>Содержание</h2>
+      <ol>
+        <li><a href="#principles">Принципы внедрения</a></li>
+        <li><a href="#roles">Роли и ответственность</a></li>
+        <li><a href="#timeline">Сводный календарный план</a></li>
+        <li><a href="#phase-0">Этап 0. Инициирование</a></li>
+        <li><a href="#phase-1">Этап 1. Требования и границы</a></li>
+        <li><a href="#phase-2">Этап 2. Архитектура и контроль рисков</a></li>
+        <li><a href="#phase-3">Этап 3. Инфраструктура и поставка зависимостей</a></li>
+        <li><a href="#phase-4">Этап 4. MVP без Tekla production</a></li>
+        <li><a href="#phase-5">Этап 5. Интеграция с Tekla workstation</a></li>
+        <li><a href="#phase-6">Этап 6. Пилот</a></li>
+        <li><a href="#phase-7">Этап 7. Приемка и промышленный запуск</a></li>
+        <li><a href="#phase-8">Этап 8. Эксплуатация и развитие</a></li>
+        <li><a href="#raci">RACI-матрица</a></li>
+        <li><a href="#gates">Контрольные gates</a></li>
+      </ol>
+    </nav>
+
+    <section id="principles">
+      <h2>1. Принципы внедрения</h2>
+      <div class="grid three">
+        <div class="card">
+          <h3>Сначала управляемость, потом автономность</h3>
+          <p>На первых этапах агент не изменяет производственные модели самостоятельно. Любое изменение проходит через dry-run, approval и журналирование.</p>
+        </div>
+        <div class="card">
+          <h3>Typed tools вместо произвольного кода</h3>
+          <p>LLM не получает прямой канал выполнения C#. Повторяемые успешные действия оформляются как типизированные инструменты Tekla.</p>
+        </div>
+        <div class="card">
+          <h3>Промышленность через evidence pack</h3>
+          <p>Каждый gate закрывается набором артефактов: архитектура, протоколы тестов, акты приемки, журнал рисков, инструкции эксплуатации.</p>
+        </div>
+      </div>
+      <div class="callout warning">
+        <strong>Рабочее допущение:</strong> внедрение идет в среде с формальными согласованиями, разделением ролей, внутренними контурами поставки и обязательной проверкой изменений перед вводом в эксплуатацию.
+      </div>
+    </section>
+
+    <section id="roles">
+      <h2>2. Роли и ответственность</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Роль</th>
+            <th>Зона ответственности</th>
+            <th>Типовые артефакты</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Бизнес-заказчик</td>
+            <td>Цели, экономический эффект, приоритет сценариев, решение о запуске пилота и промышленной эксплуатации.</td>
+            <td>Паспорт инициативы, KPI, решение управляющего комитета.</td>
+          </tr>
+          <tr>
+            <td>Владелец продукта</td>
+            <td>Backlog, критерии приемки, приоритет use cases, коммуникация с инженерами.</td>
+            <td>Product backlog, acceptance criteria, release notes.</td>
+          </tr>
+          <tr>
+            <td>Технический руководитель</td>
+            <td>Архитектура, интеграция компонентов, технические решения, контроль качества реализации.</td>
+            <td>HLD/LLD, ADR, план тестирования, deployment plan.</td>
+          </tr>
+          <tr>
+            <td>Владелец Tekla/CAD-процесса</td>
+            <td>Корректность сценариев моделирования, ограничения Tekla API, приемка CAD-результатов.</td>
+            <td>Каталог операций, эталонные модели, протоколы инженерной проверки.</td>
+          </tr>
+          <tr>
+            <td>Инфраструктура</td>
+            <td>GPU-сервер, ОС, Docker, TLS, мониторинг, резервное копирование, внутренние зеркала.</td>
+            <td>Инфраструктурная схема, runbook, backup/restore procedure.</td>
+          </tr>
+          <tr>
+            <td>Информационная безопасность</td>
+            <td>Согласование архитектуры, контроль поставки зависимостей, проверка контуров, журналирование, модель угроз.</td>
+            <td>Заключение по архитектуре, перечень мер защиты, security checklist.</td>
+          </tr>
+          <tr>
+            <td>Эксплуатация</td>
+            <td>Поддержка сервиса, инциденты, обновления, регламентные работы, SLA/SLO.</td>
+            <td>Operational runbook, журнал изменений, SLA/SLO, матрица эскалации.</td>
+          </tr>
+          <tr>
+            <td>QA / приемочная комиссия</td>
+            <td>Проверка функциональности, regression, offline acceptance, pilot acceptance.</td>
+            <td>Test plan, test report, defect register, acceptance protocol.</td>
+          </tr>
+          <tr>
+            <td>Data owner</td>
+            <td>Разрешение на использование документов, примеров кода, шаблонов РД и пилотных данных.</td>
+            <td>Реестр источников, статус проверки, правила хранения и удаления.</td>
+          </tr>
+          <tr>
+            <td>Проектный офис</td>
+            <td>Календарь, протоколы, контроль gates, риск-реестр, синхронизация подразделений.</td>
+            <td>План-график, протоколы совещаний, RAID log.</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="timeline">
+      <h2>3. Сводный календарный план</h2>
+      <div class="timeline">
+        <div class="time">Недели 0-2</div>
+        <div class="item"><strong>Инициирование.</strong> Назначить владельцев, оформить паспорт инициативы, определить пилотную область, создать рабочую группу.</div>
+        <div class="time">Недели 2-5</div>
+        <div class="item"><strong>Требования и границы.</strong> Зафиксировать use cases, данные, ограничения, критерии успеха, роли и перечень артефактов для согласования.</div>
+        <div class="time">Недели 5-8</div>
+        <div class="item"><strong>Архитектура и контроль рисков.</strong> Подготовить HLD/LLD, threat/risk review, схему контуров, policy для инструментов и audit.</div>
+        <div class="time">Недели 7-12</div>
+        <div class="item"><strong>Инфраструктура.</strong> Подготовить GPU-сервер, зеркала зависимостей, модельный каталог, TLS, мониторинг и backup.</div>
+        <div class="time">Недели 10-16</div>
+        <div class="item"><strong>MVP без production Tekla.</strong> Запустить orchestrator, RAG, eval, dry-run tool gateway и первичный контур аудита.</div>
+        <div class="time">Недели 14-20</div>
+        <div class="item"><strong>Интеграция с рабочим местом.</strong> Подключить Tekla Open API adapter, read-only tools, затем approved create/modify на копиях моделей.</div>
+        <div class="time">Недели 20-28</div>
+        <div class="item"><strong>Пилот.</strong> 3-5 пользователей, фиксированные сценарии, замер качества, журнал дефектов, корректировка регламентов.</div>
+        <div class="time">Недели 28-36</div>
+        <div class="item"><strong>Промышленный запуск.</strong> Приемка, эксплуатационные инструкции, SLA/SLO, обучение, change process, post-launch monitoring.</div>
+      </div>
+      <p class="small">Сроки являются ориентировочными. При необходимости внешних закупок, дополнительных проверок или расширенного контура испытаний календарь следует вести как gated-план, а не как жесткий спринтовый график.</p>
+    </section>
+
+    <section id="phase-0">
+      <div class="phase-title">
+        <h2>4. Этап 0. Инициирование</h2>
+        <span>Недели 0-2</span>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Веха</th>
+            <th>Ответственный</th>
+            <th>Что сделать</th>
+            <th>Результат / критерий готовности</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>0.1 Паспорт инициативы</td>
+            <td>Бизнес-заказчик, проектный офис</td>
+            <td>Описать цель, проблему, ожидаемый эффект, границы MVP, предварительные риски, зависимые подразделения.</td>
+            <td>Паспорт инициативы согласован; назначен спонсор и владелец продукта.</td>
+          </tr>
+          <tr>
+            <td>0.2 Рабочая группа</td>
+            <td>Проектный офис</td>
+            <td>Назначить представителей CAD/Tekla, ИТ, эксплуатации, безопасности, QA, data owner и разработчиков.</td>
+            <td>Утверждена RACI-матрица и регулярный ритм встреч.</td>
+          </tr>
+          <tr>
+            <td>0.3 Пилотная область</td>
+            <td>Владелец Tekla/CAD-процесса</td>
+            <td>Выбрать подразделение, типовые модели, первые 3-5 сценариев, перечень ограничений для пилота.</td>
+            <td>Зафиксирован список pilot use cases и ответственные инженеры-проверяющие.</td>
+          </tr>
+          <tr>
+            <td>0.4 Реестр решений и рисков</td>
+            <td>Технический руководитель, проектный офис</td>
+            <td>Открыть ADR/RAID log: архитектурные решения, риски, допущения, открытые вопросы.</td>
+            <td>Все спорные решения фиксируются письменно и имеют владельца.</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="callout"><strong>Gate 0:</strong> есть спонсор, рабочая группа, первичный backlog, пилотная область и разрешение переходить к детализации требований.</div>
+    </section>
+
+    <section id="phase-1">
+      <div class="phase-title">
+        <h2>5. Этап 1. Требования и границы</h2>
+        <span>Недели 2-5</span>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Веха</th>
+            <th>Ответственный</th>
+            <th>Что сделать</th>
+            <th>Результат / критерий готовности</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>1.1 Каталог сценариев</td>
+            <td>Владелец продукта, CAD owner</td>
+            <td>Разложить сценарии по категориям: чтение модели, создание элементов, армирование, чертежи, проверка, объяснение API.</td>
+            <td>Каталог сценариев с приоритетом, сложностью, риском и критериями приемки.</td>
+          </tr>
+          <tr>
+            <td>1.2 Data inventory</td>
+            <td>Data owner</td>
+            <td>Описать источники: Tekla examples, внутренний C# код, шаблоны РД, справка, тестовые модели, будущие pilot logs.</td>
+            <td>Реестр источников с владельцем, статусом допуска, местом хранения и сроком жизни.</td>
+          </tr>
+          <tr>
+            <td>1.3 Нефункциональные требования</td>
+            <td>Технический руководитель, эксплуатация</td>
+            <td>Зафиксировать требования к доступности, времени ответа, журналированию, хранению артефактов, backup/restore, обновлениям.</td>
+            <td>NFR-документ согласован с инфраструктурой и эксплуатацией.</td>
+          </tr>
+          <tr>
+            <td>1.4 Границы автоматизации</td>
+            <td>Бизнес-заказчик, CAD owner</td>
+            <td>Определить, что агент может делать сам, что только в dry-run, что требует ручной приемки, что исключено из MVP.</td>
+            <td>Матрица разрешенных/запрещенных действий утверждена и перенесена в policy backlog.</td>
+          </tr>
+          <tr>
+            <td>1.5 Метрики успеха</td>
+            <td>Владелец продукта, QA</td>
+            <td>Определить baseline: tool-call validity, human correction time, compile rate, CAD acceptance rate, audit coverage.</td>
+            <td>Метрики и способ измерения добавлены в eval plan.</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="callout"><strong>Gate 1:</strong> use cases, данные, NFR и границы автоматизации согласованы; можно проектировать архитектуру и контур контроля.</div>
+    </section>
+
+    <section id="phase-2">
+      <div class="phase-title">
+        <h2>6. Этап 2. Архитектура и контроль рисков</h2>
+        <span>Недели 5-8</span>
+      </div>
+      <div class="swimlane">
+        <div class="lane"><strong>Архитектура</strong>HLD, LLD, deployment boundaries, network flows.</div>
+        <div class="lane"><strong>Безопасность</strong>Risk review, policy gates, журналирование, supply chain controls.</div>
+        <div class="lane"><strong>Данные</strong>Классификация источников, правила обезличивания, статусы review.</div>
+        <div class="lane"><strong>Разработка</strong>Tool contracts, API boundary, тестовый контур.</div>
+        <div class="lane"><strong>Эксплуатация</strong>Monitoring, backup, incident flow, change model.</div>
+        <div class="lane"><strong>QA</strong>Acceptance tests, regression set, offline checks.</div>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Веха</th>
+            <th>Ответственный</th>
+            <th>Что сделать</th>
+            <th>Результат / критерий готовности</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>2.1 HLD/LLD</td>
+            <td>Технический руководитель</td>
+            <td>Описать GPU server, orchestrator, RAG, model serving, workstation host, audit, зеркала зависимостей.</td>
+            <td>Архитектурный пакет согласован рабочей группой.</td>
+          </tr>
+          <tr>
+            <td>2.2 Tool policy design</td>
+            <td>Технический руководитель, CAD owner</td>
+            <td>Определить read-only, simulation, create, modify, delete, export. Для каждого класса указать approval и ограничения.</td>
+            <td>Policy перенесена в `configs/tools-policy.yaml` и покрыта тестами.</td>
+          </tr>
+          <tr>
+            <td>2.3 Security review</td>
+            <td>Информационная безопасность</td>
+            <td>Проверить архитектуру, границы trust zones, запрет произвольного кода, supply chain, audit, хранение данных.</td>
+            <td>Получены замечания, назначены владельцы устранения, зафиксирован минимальный набор мер.</td>
+          </tr>
+          <tr>
+            <td>2.4 Модель эксплуатации</td>
+            <td>Эксплуатация</td>
+            <td>Описать владельца сервиса, каналы обращений, график обновлений, rollback, резервное копирование, incident flow.</td>
+            <td>Черновик operational runbook принят в работу.</td>
+          </tr>
+          <tr>
+            <td>2.5 План приемочных испытаний</td>
+            <td>QA</td>
+            <td>Составить test matrix: offline acceptance, функциональные CAD-сценарии, safety scenarios, model eval, pilot acceptance.</td>
+            <td>Тест-план привязан к gates и метрикам успеха.</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="callout"><strong>Gate 2:</strong> архитектура согласована условно или полностью; критичные замечания внесены в backlog до запуска MVP.</div>
+    </section>
+
+    <section id="phase-3">
+      <div class="phase-title">
+        <h2>7. Этап 3. Инфраструктура и поставка зависимостей</h2>
+        <span>Недели 7-12</span>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Веха</th>
+            <th>Ответственный</th>
+            <th>Что сделать</th>
+            <th>Результат / критерий готовности</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>3.1 GPU server readiness</td>
+            <td>Инфраструктура</td>
+            <td>Подготовить ОС, NVIDIA driver, Docker, storage layout, сетевые доступы, учетные записи администрирования.</td>
+            <td>`nvidia-smi`, Docker GPU smoke test, baseline monitoring работают.</td>
+          </tr>
+          <tr>
+            <td>3.2 Internal mirrors</td>
+            <td>Инфраструктура, безопасность</td>
+            <td>Развернуть или подключить внутренние источники Docker/OCI, PyPI, NuGet, Git, model storage.</td>
+            <td>Установка пакетов и pull образов возможны без внешнего доступа.</td>
+          </tr>
+          <tr>
+            <td>3.3 Air-gap bundle</td>
+            <td>DevOps / инфраструктура</td>
+            <td>Собрать bundle: images, wheels, NuGet, git bundles, model manifest, SHA256SUMS.</td>
+            <td>Bundle проверен, импортирован и зарегистрирован во внутреннем хранилище.</td>
+          </tr>
+          <tr>
+            <td>3.4 Model catalog</td>
+            <td>Технический руководитель, data owner</td>
+            <td>Зафиксировать модели, лицензии, хеши, источник, назначение, профиль железа, ограничения использования.</td>
+            <td>Модельный каталог утвержден для MVP; запрещены неучтенные веса.</td>
+          </tr>
+          <tr>
+            <td>3.5 TLS and access model</td>
+            <td>Инфраструктура, безопасность</td>
+            <td>Настроить внутренний TLS, DNS/service name, минимально необходимые доступы, журналы доступа.</td>
+            <td>Доступы выданы по ролям; нет неучтенных открытых endpoint.</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="callout"><strong>Gate 3:</strong> инфраструктура готова к MVP; зависимости устанавливаются из внутренних источников; внешний доступ не требуется для штатного запуска.</div>
+    </section>
+
+    <section id="phase-4">
+      <div class="phase-title">
+        <h2>8. Этап 4. MVP без Tekla production</h2>
+        <span>Недели 10-16</span>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Веха</th>
+            <th>Ответственный</th>
+            <th>Что сделать</th>
+            <th>Результат / критерий готовности</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>4.1 Orchestrator</td>
+            <td>Разработка</td>
+            <td>Запустить FastAPI orchestrator, health checks, LLM endpoint, RAG lookup, audit events.</td>
+            <td>Чат работает на тестовом корпусе; ошибки модели и RAG журналируются.</td>
+          </tr>
+          <tr>
+            <td>4.2 Initial RAG corpus</td>
+            <td>Data owner, CAD owner</td>
+            <td>Подготовить Tekla docs/examples, внутренние C# примеры, шаблоны РД, статусы verification.</td>
+            <td>Корпус индексируется; deprecated/blocked источники исключаются из retrieval.</td>
+          </tr>
+          <tr>
+            <td>4.3 Eval harness</td>
+            <td>QA, разработка</td>
+            <td>Собрать 100-300 задач: read, create dry-run, unsafe prompts, объяснения API, drawing draft.</td>
+            <td>Есть baseline base model vs RAG; результаты сохраняются в evidence pack.</td>
+          </tr>
+          <tr>
+            <td>4.4 Policy tests</td>
+            <td>Разработка, QA</td>
+            <td>Покрыть unit tests: unknown tool blocked, mutation needs approval, production write blocked, read allowed.</td>
+            <td>Policy tests входят в обязательную проверку перед release.</td>
+          </tr>
+          <tr>
+            <td>4.5 Demo review</td>
+            <td>Владелец продукта</td>
+            <td>Провести демонстрацию без подключения к production Tekla: чат, RAG, dry-run, audit, unsafe prompt.</td>
+            <td>Рабочая группа подтверждает, что MVP можно подключать к тестовому рабочему месту.</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="callout"><strong>Gate 4:</strong> MVP доказал базовую полезность и управляемость без риска для производственных моделей.</div>
+    </section>
+
+    <section id="phase-5">
+      <div class="phase-title">
+        <h2>9. Этап 5. Интеграция с Tekla workstation</h2>
+        <span>Недели 14-20</span>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Веха</th>
+            <th>Ответственный</th>
+            <th>Что сделать</th>
+            <th>Результат / критерий готовности</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>5.1 Workstation host hardening</td>
+            <td>Разработка, безопасность</td>
+            <td>Закрепить bind на localhost, добавить approval header validation, локальный audit, deny-by-default routing.</td>
+            <td>Обход orchestrator не позволяет выполнить mutating tool без локального контроля.</td>
+          </tr>
+          <tr>
+            <td>5.2 Tekla Open API adapter</td>
+            <td>Разработка, CAD owner</td>
+            <td>Заменить stub facade на adapter Tekla API для read-only инструментов; затем создать отдельные адаптеры для create tools.</td>
+            <td>GetSelection, QueryObjects, ValidateModel работают на тестовой модели.</td>
+          </tr>
+          <tr>
+            <td>5.3 Tool acceptance</td>
+            <td>CAD owner, QA</td>
+            <td>Для каждого инструмента подготовить test model, expected result, rollback/compensating action, список предупреждений.</td>
+            <td>Инструмент получает статус experimental, pilot-ready или blocked.</td>
+          </tr>
+          <tr>
+            <td>5.4 Approval UX</td>
+            <td>Владелец продукта, разработка</td>
+            <td>Сделать понятный сценарий подтверждения: что будет изменено, где, какие объекты, как откатить.</td>
+            <td>Инженер видит dry-run diff/summary перед подтверждением.</td>
+          </tr>
+          <tr>
+            <td>5.5 Workstation package</td>
+            <td>Инфраструктура, эксплуатация</td>
+            <td>Подготовить установочный пакет, инструкцию, версионирование, журнал обновлений, способ отключения.</td>
+            <td>Хост устанавливается и удаляется регламентно; версия отслеживается.</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="callout"><strong>Gate 5:</strong> read-only tools работают на рабочем месте; mutating tools доступны только на копиях моделей и только через approval.</div>
+    </section>
+
+    <section id="phase-6">
+      <div class="phase-title">
+        <h2>10. Этап 6. Пилот</h2>
+        <span>Недели 20-28</span>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Веха</th>
+            <th>Ответственный</th>
+            <th>Что сделать</th>
+            <th>Результат / критерий готовности</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>6.1 Pilot charter</td>
+            <td>Бизнес-заказчик, владелец продукта</td>
+            <td>Утвердить 3-5 пользователей, список моделей-копий, сценарии, расписание, критерии прекращения пилота.</td>
+            <td>Все участники понимают рамки пилота и не используют production-модели для автономных изменений.</td>
+          </tr>
+          <tr>
+            <td>6.2 Training session</td>
+            <td>Владелец продукта, CAD owner</td>
+            <td>Обучить пользователей: как писать запросы, читать dry-run, подтверждать действия, сообщать дефекты.</td>
+            <td>Пользователи прошли вводный инструктаж; есть канал поддержки.</td>
+          </tr>
+          <tr>
+            <td>6.3 Pilot execution</td>
+            <td>CAD owner, QA</td>
+            <td>Выполнять сценарии по плану, фиксировать результаты, корректировки инженера, время, ошибки и отклонения.</td>
+            <td>Накоплена статистика по каждому сценарию; audit покрывает 100% tool attempts.</td>
+          </tr>
+          <tr>
+            <td>6.4 Weekly triage</td>
+            <td>Проектный офис, технический руководитель</td>
+            <td>Разбирать дефекты, prompt failures, RAG gaps, policy false positives/negatives, инфраструктурные проблемы.</td>
+            <td>Каждая проблема имеет владельца, severity, срок и решение: fix, defer, accept, block.</td>
+          </tr>
+          <tr>
+            <td>6.5 Pilot report</td>
+            <td>QA, владелец продукта</td>
+            <td>Собрать отчет: метрики, полезность, риски, дефекты, рекомендации, готовность к промышленному запуску.</td>
+            <td>Приемочная комиссия принимает решение: go, go with conditions или no-go.</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="callout"><strong>Gate 6:</strong> pilot report подтверждает ценность, безопасность процесса и готовность эксплуатационной модели.</div>
+    </section>
+
+    <section id="phase-7">
+      <div class="phase-title">
+        <h2>11. Этап 7. Приемка и промышленный запуск</h2>
+        <span>Недели 28-36</span>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Веха</th>
+            <th>Ответственный</th>
+            <th>Что сделать</th>
+            <th>Результат / критерий готовности</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>7.1 Evidence pack</td>
+            <td>Проектный офис, QA</td>
+            <td>Собрать полный пакет: архитектура, тесты, pilot report, risk register, инструкции, журнал изменений, известные ограничения.</td>
+            <td>Пакет готов для формальной приемки и передачи в эксплуатацию.</td>
+          </tr>
+          <tr>
+            <td>7.2 Operational readiness review</td>
+            <td>Эксплуатация</td>
+            <td>Проверить мониторинг, alerting, backup/restore, обновления, incident flow, доступы, capacity plan.</td>
+            <td>Эксплуатация подтверждает готовность принять сервис.</td>
+          </tr>
+          <tr>
+            <td>7.3 Final security review</td>
+            <td>Информационная безопасность</td>
+            <td>Проверить устранение замечаний, логи, доступы, supply chain, запрет production writes без регламента.</td>
+            <td>Нет критичных открытых замечаний; условия запуска документированы.</td>
+          </tr>
+          <tr>
+            <td>7.4 Change approval</td>
+            <td>Проектный офис, эксплуатация</td>
+            <td>Оформить изменение: дата запуска, план отката, окно работ, ответственные, коммуникация пользователям.</td>
+            <td>Изменение утверждено; rollback план проверен.</td>
+          </tr>
+          <tr>
+            <td>7.5 Production launch</td>
+            <td>Эксплуатация, технический руководитель</td>
+            <td>Ввести сервис в промышленный контур в ограниченном режиме, включить усиленный мониторинг и daily check.</td>
+            <td>Сервис доступен целевой группе; нет критичных инцидентов в stabilization window.</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="callout"><strong>Gate 7:</strong> решение принято в промышленную эксплуатацию с ограничениями, SLA/SLO и назначенными владельцами.</div>
+    </section>
+
+    <section id="phase-8">
+      <div class="phase-title">
+        <h2>12. Этап 8. Эксплуатация и развитие</h2>
+        <span>После запуска</span>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Направление</th>
+            <th>Ответственный</th>
+            <th>Регулярные действия</th>
+            <th>Контрольный результат</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Service operations</td>
+            <td>Эксплуатация</td>
+            <td>Мониторинг доступности, latency, GPU utilization, ошибок LLM, ошибок workstation host.</td>
+            <td>Еженедельный service report; инциденты закрываются по SLA.</td>
+          </tr>
+          <tr>
+            <td>Model and RAG quality</td>
+            <td>Владелец продукта, QA</td>
+            <td>Обновление eval set, анализ пользовательских корректировок, review новых источников RAG.</td>
+            <td>Качество не деградирует после обновлений; regression suite проходит.</td>
+          </tr>
+          <tr>
+            <td>Change management</td>
+            <td>Технический руководитель</td>
+            <td>Любые новые tools, модели, prompts, RAG sources проходят review, тесты и approval.</td>
+            <td>Нет незарегистрированных изменений в production.</td>
+          </tr>
+          <tr>
+            <td>Fine-tuning readiness</td>
+            <td>Data owner, технический руководитель</td>
+            <td>Собирать verified SFT dataset из успешных сценариев, не тренировать на raw logs без review.</td>
+            <td>LoRA/QLoRA запускается только после baseline и data quality gate.</td>
+          </tr>
+          <tr>
+            <td>Knowledge transfer</td>
+            <td>Владелец продукта, эксплуатация</td>
+            <td>Обновлять инструкции, FAQ, шаблоны запросов, список ограничений, обучающие материалы.</td>
+            <td>Новые пользователи могут подключиться без участия разработчиков.</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="raci">
+      <h2>13. RACI-матрица по ключевым работам</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Работа</th>
+            <th>Бизнес</th>
+            <th>Продукт</th>
+            <th>Техлид</th>
+            <th>CAD owner</th>
+            <th>Инфра</th>
+            <th>Безопасность</th>
+            <th>QA</th>
+            <th>Эксплуатация</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>Паспорт инициативы</td><td>A</td><td>R</td><td>C</td><td>C</td><td>I</td><td>I</td><td>I</td><td>I</td></tr>
+          <tr><td>Каталог use cases</td><td>A</td><td>R</td><td>C</td><td>R</td><td>I</td><td>C</td><td>C</td><td>I</td></tr>
+          <tr><td>Архитектура решения</td><td>I</td><td>C</td><td>A/R</td><td>C</td><td>C</td><td>C</td><td>C</td><td>C</td></tr>
+          <tr><td>Tool policy</td><td>I</td><td>C</td><td>A/R</td><td>R</td><td>I</td><td>C</td><td>C</td><td>I</td></tr>
+          <tr><td>Инфраструктура GPU</td><td>I</td><td>I</td><td>C</td><td>I</td><td>A/R</td><td>C</td><td>I</td><td>C</td></tr>
+          <tr><td>RAG corpus governance</td><td>I</td><td>A</td><td>C</td><td>R</td><td>I</td><td>C</td><td>R</td><td>I</td></tr>
+          <tr><td>MVP development</td><td>I</td><td>A</td><td>R</td><td>C</td><td>C</td><td>C</td><td>C</td><td>I</td></tr>
+          <tr><td>Pilot execution</td><td>A</td><td>R</td><td>C</td><td>R</td><td>I</td><td>I</td><td>R</td><td>C</td></tr>
+          <tr><td>Production acceptance</td><td>A</td><td>R</td><td>R</td><td>C</td><td>C</td><td>C</td><td>R</td><td>R</td></tr>
+          <tr><td>Operations</td><td>I</td><td>C</td><td>C</td><td>I</td><td>C</td><td>C</td><td>I</td><td>A/R</td></tr>
+        </tbody>
+      </table>
+      <p class="small">R = responsible, A = accountable, C = consulted, I = informed.</p>
+    </section>
+
+    <section id="gates">
+      <h2>14. Контрольные gates и обязательные артефакты</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Gate</th>
+            <th>Решение</th>
+            <th>Минимальные артефакты</th>
+            <th>Условие перехода</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="tag blue">Gate 0</span></td>
+            <td>Старт проработки</td>
+            <td>Паспорт инициативы, рабочая группа, pilot use cases, RAID log.</td>
+            <td>Есть спонсор, владелец продукта и согласованная область MVP.</td>
+          </tr>
+          <tr>
+            <td><span class="tag blue">Gate 1</span></td>
+            <td>Переход к архитектуре</td>
+            <td>Каталог сценариев, data inventory, NFR, метрики успеха.</td>
+            <td>Границы автоматизации понятны и приняты владельцами процесса.</td>
+          </tr>
+          <tr>
+            <td><span class="tag warn">Gate 2</span></td>
+            <td>Разрешение на MVP build</td>
+            <td>HLD/LLD, security review, tool policy, test plan, operational draft.</td>
+            <td>Критичные замечания имеют план устранения; нет блокирующих рисков.</td>
+          </tr>
+          <tr>
+            <td><span class="tag warn">Gate 3</span></td>
+            <td>Готовность инфраструктуры</td>
+            <td>GPU smoke test, internal mirrors, model catalog, access model, backup draft.</td>
+            <td>Сервис можно запускать без внешнего доступа и без ручных обходов поставки.</td>
+          </tr>
+          <tr>
+            <td><span class="tag ok">Gate 4</span></td>
+            <td>Готовность MVP</td>
+            <td>Orchestrator, RAG corpus, eval report, policy tests, audit sample.</td>
+            <td>Dry-run сценарии и unsafe prompts проходят контрольные проверки.</td>
+          </tr>
+          <tr>
+            <td><span class="tag ok">Gate 5</span></td>
+            <td>Готовность Tekla pilot</td>
+            <td>Workstation host, Tekla adapter, tool acceptance, install guide.</td>
+            <td>Read-only tools работают; mutating tools ограничены approval и копиями моделей.</td>
+          </tr>
+          <tr>
+            <td><span class="tag danger">Gate 6</span></td>
+            <td>Решение по промышленному запуску</td>
+            <td>Pilot report, defect register, risk closure, user feedback, service model.</td>
+            <td>Приемочная комиссия принимает go / go with conditions.</td>
+          </tr>
+          <tr>
+            <td><span class="tag danger">Gate 7</span></td>
+            <td>Передача в эксплуатацию</td>
+            <td>Evidence pack, operational runbook, final review, change approval, rollback plan.</td>
+            <td>Эксплуатация принимает сервис; назначены SLA/SLO и владельцы.</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="callout danger">
+        <strong>Стоп-факторы перед промышленным запуском:</strong> нет владельца сервиса, не работает audit, есть неучтенные модели или зависимости, mutating tools обходят approval, нет rollback-плана, pilot report не подтверждает качество на ключевых сценариях.
+      </div>
+    </section>
+
+    <section>
+      <h2>15. Минимальный пакет документов к промышленной эксплуатации</h2>
+      <div class="grid two">
+        <div class="card">
+          <h3>Управление и приемка</h3>
+          <ul>
+            <li>Паспорт инициативы и решение о запуске.</li>
+            <li>Каталог use cases и критерии приемки.</li>
+            <li>RACI, RAID log и протоколы gates.</li>
+            <li>Pilot report и решение приемочной комиссии.</li>
+            <li>Release notes и план коммуникации пользователям.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Технология и эксплуатация</h3>
+          <ul>
+            <li>HLD/LLD и deployment diagram.</li>
+            <li>Security review и перечень мер контроля.</li>
+            <li>Operational runbook, backup/restore, incident flow.</li>
+            <li>Model catalog, dependency manifest, checksums.</li>
+            <li>Test reports, regression suite, audit samples.</li>
+          </ul>
+        </div>
+      </div>
+      <p class="print-note">Документ можно распечатать или сохранить в PDF из браузера. Для рабочей версии допускается добавить внутренние номера заявок, протоколов и согласующих комитетов.</p>
+    </section>
+  </main>
+</body>
+</html>
+

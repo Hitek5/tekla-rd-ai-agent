@@ -152,6 +152,12 @@ BPMN-файлы лежат в [docs/bpmn](docs/bpmn) и могут быть от
 | [rag-ingestion.bpmn](docs/bpmn/rag-ingestion.bpmn) | Прием источника, проверка ИБ, извлечение текста, chunking, review и публикация в RAG | Управление качеством корпуса знаний |
 | [airgap-rollout.bpmn](docs/bpmn/airgap-rollout.bpmn) | Подготовка transfer bundle, security review, перенос в КСПД и offline acceptance | Согласование внедрения с инфраструктурой и ИБ |
 
+## Организационный план внедрения
+
+Отдельный HTML-документ для управленческого обсуждения и запуска работ: [Пошаговый план внедрения от 0 до промышленной эксплуатации](docs/industrial-rollout-plan.html).
+
+В нем описаны этапы, ответственные роли, вехи, контрольные gates, RACI-матрица, evidence pack и условия перехода от инициативы к пилоту и промышленной эксплуатации.
+
 ## Что уже реализовано в этом репозитории
 
 - `services/orchestrator` - минимальный FastAPI-сервис агента: RAG-контекст, OpenAI-compatible LLM вызов, политика tool approval, JSONL-аудит.
@@ -160,6 +166,7 @@ BPMN-файлы лежат в [docs/bpmn](docs/bpmn) и могут быть от
 - `configs` - модельная матрица, политика инструментов, список источников RAG, пример eval-задач.
 - `scripts` - подготовка air-gap bundle, chunking корпуса, eval harness, Ubuntu GPU bootstrap.
 - `docs` - архитектура, безопасность, эксплуатация, корпус данных, оценка качества и исправленная компонентная база.
+- `docs/industrial-rollout-plan.html` - пошаговый организационный план внедрения от нуля до промышленной эксплуатации.
 - `docs/diagrams` - SVG-схемы архитектуры, процесса запроса и deployment boundaries.
 - `docs/bpmn` - BPMN 2.0 описания ключевых процессов.
 
@@ -239,4 +246,3 @@ docker compose -f docker-compose.mvp.yml up --build
 - `delete`, `modify`, `export`, `release RD` требуют явного approval token.
 - Все tool calls пишутся в JSONL-аудит.
 - RAG-документы считаются недоверенным контентом: они могут быть источником фактов, но не инструкциями для обхода политики.
-
