@@ -1,0 +1,23 @@
+{
+  "models": [
+    {
+      "name": "Qwen2.5-Coder-7B-Instruct",
+      "source": "https://huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct",
+      "format": "GGUF",
+      "quantization": "Q4_K_M",
+      "intended_hardware": "12GB VRAM",
+      "license_file": "licenses/qwen2.5-coder.txt",
+      "sha256": "fill-after-download"
+    },
+    {
+      "name": "DeepSeek-Coder-V2-Lite-Instruct",
+      "source": "https://github.com/deepseek-ai/DeepSeek-Coder-V2",
+      "format": "GGUF",
+      "quantization": "Q4_K_M",
+      "intended_hardware": "12GB VRAM",
+      "license_file": "licenses/deepseek-coder-v2.txt",
+      "sha256": "fill-after-download"
+    }
+  ]
+}
+

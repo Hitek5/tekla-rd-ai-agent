@@ -1,0 +1,57 @@
+### Health
+GET http://127.0.0.1:8080/health
+
+### Chat with RAG
+POST http://127.0.0.1:8080/chat
+Content-Type: application/json
+
+{
+  "message": "Создай балку HEA300 между точками (0,0,0) и (6000,0,0). Что потребуется для безопасного выполнения?",
+  "user": "pilot/user",
+  "project_id": "pilot-copy-001",
+  "production_model": false
+}
+
+### Dry-run tool call
+POST http://127.0.0.1:8080/tool-calls
+Content-Type: application/json
+
+{
+  "tool": "CreateBeam",
+  "args": {
+    "start": {"x": 0, "y": 0, "z": 0},
+    "end": {"x": 6000, "y": 0, "z": 0},
+    "profile": "HEA300",
+    "material": "S355",
+    "class": "3",
+    "name": "AI_DRAFT_BEAM"
+  },
+  "workstation_url": "http://127.0.0.1:51234",
+  "user": "pilot/user",
+  "project_id": "pilot-copy-001",
+  "dry_run": true,
+  "production_model": false
+}
+
+### Approved execution to workstation host
+POST http://127.0.0.1:8080/tool-calls
+Content-Type: application/json
+
+{
+  "tool": "CreateBeam",
+  "args": {
+    "start": {"x": 0, "y": 0, "z": 0},
+    "end": {"x": 6000, "y": 0, "z": 0},
+    "profile": "HEA300",
+    "material": "S355",
+    "class": "3",
+    "name": "AI_DRAFT_BEAM"
+  },
+  "workstation_url": "http://127.0.0.1:51234",
+  "user": "pilot/user",
+  "project_id": "pilot-copy-001",
+  "dry_run": false,
+  "production_model": false,
+  "approval_token": "approved-by-engineer-ticket-001"
+}
+

@@ -1,0 +1,18 @@
+[Unit]
+Description=Tekla/RD Local AI Agent Orchestrator
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/tekla-rd-agent
+EnvironmentFile=/opt/tekla-rd-agent/.env
+ExecStart=/opt/tekla-rd-agent/.venv/bin/uvicorn tekla_agent.main:app --app-dir services/orchestrator --host 0.0.0.0 --port 8080
+Restart=on-failure
+RestartSec=5
+User=tekla-agent
+Group=tekla-agent
+
+[Install]
+WantedBy=multi-user.target
+

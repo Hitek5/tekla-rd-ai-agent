@@ -1,0 +1,42 @@
+sources:
+  - name: Tekla Open API examples
+    type: git
+    url: https://github.com/TrimbleSolutionsCorporation/TSOpenAPIExamples
+    ingestion_status: mirror_before_airgap
+    tags: [tekla, csharp, examples]
+
+  - name: Tekla Developer Center model code examples
+    type: web
+    url: https://developer.tekla.com/documentation/model-code-examples
+    ingestion_status: export_before_airgap
+    tags: [tekla, api, docs]
+
+  - name: Internal C# Tekla examples
+    type: folder
+    path: data/raw/internal-tekla-examples
+    ingestion_status: required
+    tags: [internal, csharp, verified]
+
+  - name: RD templates and standards
+    type: folder
+    path: data/raw/rd-templates
+    ingestion_status: required
+    tags: [rd, standards, templates]
+
+  - name: Tekla workstation agent audit examples
+    type: folder
+    path: data/raw/audit-lessons
+    ingestion_status: optional_after_pilot
+    tags: [feedback, errors, corrections]
+
+chunking:
+  target_chars: 1800
+  overlap_chars: 250
+  metadata_required:
+    - source_name
+    - source_path
+    - source_version
+    - author_or_owner
+    - tekla_version
+    - verification_status
+

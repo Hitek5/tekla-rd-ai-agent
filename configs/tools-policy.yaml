@@ -1,0 +1,74 @@
+defaults:
+  dry_run: true
+  audit: true
+  allow_on_production_models: false
+  approval_token_required_for_mutations: true
+
+tools:
+  GetSelection:
+    category: read
+    mutates_model: false
+    requires_approval: false
+    allowed_in_production: true
+
+  QueryObjects:
+    category: read
+    mutates_model: false
+    requires_approval: false
+    allowed_in_production: true
+
+  ValidateModel:
+    category: read
+    mutates_model: false
+    requires_approval: false
+    allowed_in_production: true
+
+  DryRun:
+    category: simulation
+    mutates_model: false
+    requires_approval: false
+    allowed_in_production: true
+
+  CreateBeam:
+    category: create
+    mutates_model: true
+    requires_approval: true
+    allowed_in_production: false
+
+  CreateColumn:
+    category: create
+    mutates_model: true
+    requires_approval: true
+    allowed_in_production: false
+
+  CreateRebar:
+    category: create
+    mutates_model: true
+    requires_approval: true
+    allowed_in_production: false
+
+  ModifyObject:
+    category: modify
+    mutates_model: true
+    requires_approval: true
+    allowed_in_production: false
+
+  DeleteObject:
+    category: delete
+    mutates_model: true
+    requires_approval: true
+    allowed_in_production: false
+
+  GenerateDrawingDraft:
+    category: export
+    mutates_model: true
+    requires_approval: true
+    allowed_in_production: false
+
+blocked_patterns:
+  - "execute arbitrary c#"
+  - "run powershell from prompt"
+  - "release rd without approval"
+  - "delete all"
+  - "disable audit"
+

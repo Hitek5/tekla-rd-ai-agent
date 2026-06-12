@@ -1,0 +1,56 @@
+default_model: qwen2.5-coder-7b-instruct-q4
+
+hardware_profiles:
+  rtx_a2000_12gb:
+    vram_gb: 12
+    inference:
+      - model: Qwen2.5-Coder-7B-Instruct
+        format: GGUF
+        quantization: Q4_K_M or Q5_K_M
+        role: primary code model for MVP
+      - model: DeepSeek-Coder-V2-Lite-Instruct
+        format: GGUF
+        quantization: Q4_K_M
+        role: comparison model
+    training:
+      recommendation: QLoRA 3B-7B only, small batch, gradient checkpointing
+
+  rtx_5070_ti_16gb:
+    vram_gb: 16
+    inference:
+      - model: Qwen2.5-Coder-7B-Instruct
+        format: GGUF or HF
+        quantization: Q4/Q5/8bit
+      - model: Qwen2.5-Coder-14B-Instruct
+        format: GGUF
+        quantization: Q4
+    training:
+      recommendation: QLoRA 7B, LoRA 7B if memory allows
+    note: "Ordinary RTX 5070 is listed by NVIDIA as 12 GB; 16 GB maps to RTX 5070 Ti."
+
+  two_rtx_a2000_12gb:
+    vram_gb: "2x12"
+    inference:
+      recommendation: Run separate model services per GPU; do not treat as one 24 GB GPU.
+    training:
+      recommendation: Avoid multi-GPU training for MVP unless Accelerate/DeepSpeed is explicitly validated.
+
+  single_24gb_gpu:
+    vram_gb: 24
+    inference:
+      - model: Qwen2.5-Coder-14B-Instruct
+        format: GGUF or HF
+        quantization: Q4/Q5/8bit
+      - model: Qwen2.5-Coder-32B-Instruct
+        format: GGUF
+        quantization: Q4
+    training:
+      recommendation: QLoRA 7B/14B; 32B only with careful memory tuning.
+
+runtime_defaults:
+  python: "3.12 or 3.13"
+  pytorch_cuda: "Use PyTorch-supported CUDA wheel, prefer CUDA 12.8 for Blackwell validation."
+  serving_priority:
+    - llama.cpp or Ollama for fast GGUF MVP
+    - vLLM or SGLang for higher throughput after GPU validation
+

@@ -1,0 +1,55 @@
+services:
+  qdrant:
+    image: qdrant/qdrant:v1.12.1
+    restart: unless-stopped
+    ports:
+      - "6333:6333"
+    volumes:
+      - ./data/rag/qdrant:/qdrant/storage
+
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ./data/models/ollama:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  orchestrator:
+    build:
+      context: .
+      dockerfile: services/orchestrator/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      QDRANT_URL: http://qdrant:6333
+      RAG_CHUNKS_PATH: /app/data/rag/chunks.jsonl
+      AUDIT_LOG_PATH: /app/data/audit/orchestrator.jsonl
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./configs:/app/configs:ro
+      - ./data:/app/data
+    depends_on:
+      - qdrant
+      - ollama
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports:
+      - "8443:8443"
+    volumes:
+      - ./deploy/nginx/agent.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./deploy/nginx/certs:/etc/nginx/certs:ro
+    depends_on:
+      - orchestrator
+
