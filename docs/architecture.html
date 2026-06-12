@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Архитектура Tekla/RD AI Agent</title>
+  <link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+  <main class="page">
+    <div class="topbar">
+      <span>Tekla/RD AI Agent MVP</span>
+      <nav>
+        <a href="index.html">Главная</a>
+        <a href="architecture.html">Архитектура</a>
+        <a href="deployment-runbook.html">Развертывание</a>
+        <a href="security-policy.html">Безопасность</a>
+        <a href="industrial-rollout-plan.html">План внедрения</a>
+      </nav>
+    </div>
+
+    <header class="hero">
+      <h1>Архитектура решения</h1>
+      <p class="subtitle">
+        Эта страница объясняет, из каких частей состоит локальный ИИ-агент для Tekla/RD, как проходит пользовательский запрос,
+        где находятся контрольные точки и почему MVP строится вокруг типизированных инструментов, а не вокруг свободного исполнения кода.
+      </p>
+      <div class="meta">
+        <div><strong>Основной принцип</strong>LLM предлагает, policy разрешает, Tekla tool выполняет</div>
+        <div><strong>Рабочее место</strong>TeklaWorkstationHost рядом с Tekla</div>
+        <div><strong>Сервер</strong>LLM, RAG, orchestrator, audit</div>
+        <div><strong>Режим MVP</strong>Копии моделей и dry-run по умолчанию</div>
+      </div>
+    </header>
+
+    <section>
+      <h2>1. Общая схема</h2>
+      <img class="diagram" src="diagrams/runtime-architecture.svg" alt="Runtime architecture">
+      <p>
+        Агент разделен на серверную и клиентскую части. Серверная часть отвечает за диалог, работу с локальной моделью,
+        поиск контекста и принятие решений по policy. Клиентская часть находится на рабочем месте пользователя и выполняет
+        только те операции Tekla, которые явно реализованы как инструменты.
+      </p>
+      <div class="callout">
+        <strong>Ключевая мысль:</strong> модель не управляет Tekla напрямую. Она формирует предложение, а выполнение проходит через whitelist,
+        dry-run, approval и audit.
+      </div>
+    </section>
+
+    <section>
+      <h2>2. Компоненты и их назначение</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Компонент</th>
+            <th>Где находится</th>
+            <th>Зачем нужен</th>
+            <th>Что важно контролировать</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Chat UI / внутренний портал</td>
+            <td>Рабочее место или корпоративный портал</td>
+            <td>Дает инженеру понятный интерфейс для запроса: “создать”, “проверить”, “объяснить”, “подготовить черновик”.</td>
+            <td>Идентификация пользователя, отображение dry-run, явное подтверждение действий.</td>
+          </tr>
+          <tr>
+            <td>Orchestrator API</td>
+            <td>GPU-сервер</td>
+            <td>Собирает prompt, вызывает RAG, обращается к LLM, проверяет tool calls и пишет audit.</td>
+            <td>Ошибки модели, политику tools, журналирование, таймауты, версию prompt.</td>
+          </tr>
+          <tr>
+            <td>Local LLM server</td>
+            <td>GPU-сервер</td>
+            <td>Запускает локальную модель кода/инструкций без обращения во внешние API.</td>
+            <td>Версию модели, формат весов, лицензию, использование GPU, скорость ответа.</td>
+          </tr>
+          <tr>
+            <td>RAG corpus</td>
+            <td>GPU-сервер или внутреннее хранилище</td>
+            <td>Дает модели знания по Tekla Open API, внутренним C# примерам, шаблонам РД и правилам.</td>
+            <td>Статус проверки источников, актуальность, исключение устаревших и запрещенных документов.</td>
+          </tr>
+          <tr>
+            <td>Tool policy</td>
+            <td>Orchestrator, конфиг `tools-policy.yaml`</td>
+            <td>Решает, можно ли выполнять инструмент, нужен ли approval и разрешена ли работа с production-моделью.</td>
+            <td>Deny-by-default, unit tests, запрет неизвестных инструментов.</td>
+          </tr>
+          <tr>
+            <td>TeklaWorkstationHost</td>
+            <td>Рабочее место пользователя</td>
+            <td>Локальный HTTP-host рядом с Tekla, который вызывает Tekla Open API через типизированные методы.</td>
+            <td>Bind на localhost, локальный audit, запрет mutating calls без approval header.</td>
+          </tr>
+          <tr>
+            <td>JSONL audit</td>
+            <td>Сервер и рабочее место</td>
+            <td>Фиксирует решения, tool calls, хеши аргументов, результаты, ошибки и approvals.</td>
+            <td>Полноту журнала, срок хранения, доступность для разбора инцидентов и пилота.</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>3. Как проходит запрос</h2>
+      <img class="diagram" src="diagrams/request-flow.svg" alt="Request flow">
+      <ol class="steps">
+        <li><strong>Инженер формулирует задачу.</strong> Запрос может быть информационным, проверочным или связанным с изменением модели.</li>
+        <li><strong>Orchestrator ищет контекст.</strong> RAG подбирает релевантные фрагменты документации, примеров и внутренних правил.</li>
+        <li><strong>LLM формирует ответ или план tool call.</strong> Модель не исполняет код, а предлагает структурированное действие.</li>
+        <li><strong>Policy проверяет действие.</strong> Неизвестные инструменты блокируются. Mutating tools уходят в dry-run без approval.</li>
+        <li><strong>Workstation host выполняет разрешенное действие.</strong> Read-only tools можно запускать сразу; create/modify требуют подтверждения.</li>
+        <li><strong>Результат возвращается пользователю и попадает в audit.</strong> В ответе должны быть предупреждения, assumptions и следующий шаг.</li>
+      </ol>
+    </section>
+
+    <section>
+      <h2>4. Почему не начинаем с дообучения</h2>
+      <div class="grid two">
+        <div class="card">
+          <h3>RAG быстрее дает знания о предметной области</h3>
+          <p>Для старта важнее дать модели справку по Tekla API, внутренние примеры и правила РД. Это можно проверить и обновить без тренировки весов.</p>
+        </div>
+        <div class="card">
+          <h3>Дообучение требует чистого корпуса</h3>
+          <p>LoRA/QLoRA стоит запускать только после накопления проверенных примеров: запрос, контекст, корректный tool call или код, результат проверки.</p>
+        </div>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Подход</th>
+            <th>Когда использовать</th>
+            <th>Основной риск</th>
+            <th>Как снижать риск</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>RAG + tools</td>
+            <td>MVP и пилот</td>
+            <td>Неполный или устаревший контекст</td>
+            <td>Review источников, eval set, статусы `verified/deprecated/blocked`.</td>
+          </tr>
+          <tr>
+            <td>Генерация C# в sandbox</td>
+            <td>Исследовательский контур, не production</td>
+            <td>Некорректный или опасный код</td>
+            <td>Компиляция, статические проверки, тестовые модели, ручная приемка.</td>
+          </tr>
+          <tr>
+            <td>LoRA/QLoRA</td>
+            <td>После baseline и чистого корпуса</td>
+            <td>Обучение на ошибках, деградация качества</td>
+            <td>Verified SFT dataset, контрольная выборка, сравнение base/RAG/LoRA.</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>5. Минимальный набор tool calls для MVP</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Инструмент</th>
+            <th>Тип</th>
+            <th>Назначение</th>
+            <th>Ограничение MVP</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>GetSelection</code></td>
+            <td><span class="tag green">Read-only</span></td>
+            <td>Прочитать выбранные объекты Tekla и вернуть свойства.</td>
+            <td>Разрешен без approval.</td>
+          </tr>
+          <tr>
+            <td><code>QueryObjects</code></td>
+            <td><span class="tag green">Read-only</span></td>
+            <td>Найти объекты по типу, имени, профилю или материалу.</td>
+            <td>Ограничить объем выдачи и не возвращать лишние данные.</td>
+          </tr>
+          <tr>
+            <td><code>ValidateModel</code></td>
+            <td><span class="tag green">Read-only</span></td>
+            <td>Проверить модель или выбранный набор объектов по заданным правилам.</td>
+            <td>Сначала только диагностические проверки.</td>
+          </tr>
+          <tr>
+            <td><code>CreateBeam</code>, <code>CreateColumn</code>, <code>CreateRebar</code></td>
+            <td><span class="tag warn">Create</span></td>
+            <td>Создать новые элементы по параметрам.</td>
+            <td>Dry-run без approval, выполнение только на копиях моделей.</td>
+          </tr>
+          <tr>
+            <td><code>ModifyObject</code></td>
+            <td><span class="tag red">Modify</span></td>
+            <td>Изменить свойства или геометрию существующего объекта.</td>
+            <td>Только после отдельной приемки сценария и подтверждения инженера.</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>6. Что должно быть готово перед пилотом</h2>
+      <div class="grid three">
+        <div class="card">
+          <h3>Технически</h3>
+          <ul>
+            <li>Orchestrator развернут и пишет audit.</li>
+            <li>Локальная модель отвечает через внутренний endpoint.</li>
+            <li>RAG индексируется из проверенных источников.</li>
+            <li>Workstation host работает на тестовом рабочем месте.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Процессно</h3>
+          <ul>
+            <li>Назначены владельцы сценариев и приемки.</li>
+            <li>Определены копии моделей для пилота.</li>
+            <li>Есть канал поддержки и журнал дефектов.</li>
+            <li>Пользователи понимают dry-run и approval.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Контрольно</h3>
+          <ul>
+            <li>Unknown tools блокируются.</li>
+            <li>Mutating tools требуют approval.</li>
+            <li>Production writes отключены.</li>
+            <li>Все tool attempts попадают в audit.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+  </main>
+</body>
+</html>
+

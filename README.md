@@ -158,6 +158,8 @@ BPMN-файлы лежат в [docs/bpmn](docs/bpmn) и могут быть от
 
 В нем описаны этапы, ответственные роли, вехи, контрольные gates, RACI-матрица, evidence pack и условия перехода от инициативы к пилоту и промышленной эксплуатации.
 
+Публичная HTML-документация опубликована через GitHub Pages: [https://hitek5.github.io/tekla-rd-ai-agent/](https://hitek5.github.io/tekla-rd-ai-agent/).
+
 ## Что уже реализовано в этом репозитории
 
 - `services/orchestrator` - минимальный FastAPI-сервис агента: RAG-контекст, OpenAI-compatible LLM вызов, политика tool approval, JSONL-аудит.

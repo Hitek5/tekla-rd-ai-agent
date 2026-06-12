@@ -3,110 +3,154 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Tekla/RD AI Agent Docs</title>
-  <style>
-    body {
-      margin: 0;
-      background: #f6f8fb;
-      color: #172033;
-      font-family: Arial, Helvetica, sans-serif;
-      line-height: 1.55;
-    }
-
-    main {
-      max-width: 960px;
-      margin: 0 auto;
-      padding: 40px 22px;
-    }
-
-    header,
-    section {
-      background: #fff;
-      border: 1px solid #d7dde8;
-      border-radius: 8px;
-      padding: 24px;
-      margin-bottom: 18px;
-    }
-
-    h1 {
-      margin: 0 0 10px;
-      font-size: 32px;
-      letter-spacing: 0;
-    }
-
-    h2 {
-      margin: 0 0 12px;
-      font-size: 22px;
-      letter-spacing: 0;
-    }
-
-    a {
-      color: #1d4ed8;
-      text-decoration: none;
-      font-weight: 700;
-    }
-
-    a:hover {
-      text-decoration: underline;
-    }
-
-    .lead {
-      color: #596779;
-      margin: 0;
-    }
-
-    .grid {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 14px;
-    }
-
-    .card {
-      border: 1px solid #d7dde8;
-      border-radius: 8px;
-      padding: 16px;
-      background: #fbfdff;
-    }
-
-    .card p {
-      color: #596779;
-      margin-bottom: 0;
-    }
-
-    @media (max-width: 720px) {
-      .grid {
-        grid-template-columns: 1fr;
-      }
-    }
-  </style>
+  <title>Tekla/RD AI Agent - документация</title>
+  <link rel="stylesheet" href="assets/site.css">
 </head>
 <body>
-  <main>
-    <header>
-      <h1>Tekla/RD AI Agent Docs</h1>
-      <p class="lead">Публичная документация по MVP локального ИИ-агента для Tekla/RD.</p>
+  <main class="page">
+    <div class="topbar">
+      <span>Tekla/RD AI Agent MVP</span>
+      <nav>
+        <a href="index.html">Главная</a>
+        <a href="architecture.html">Архитектура</a>
+        <a href="deployment-runbook.html">Развертывание</a>
+        <a href="security-policy.html">Безопасность</a>
+        <a href="industrial-rollout-plan.html">План внедрения</a>
+      </nav>
+    </div>
+
+    <header class="hero">
+      <h1>Документация по локальному ИИ-агенту для Tekla/RD</h1>
+      <p class="subtitle">
+        Эта страница собрана для сотрудников, которым нужно быстро понять, что предлагается внедрять, как устроен агент,
+        какие проверки нужны перед пилотом и что должно быть готово до промышленной эксплуатации.
+      </p>
+      <div class="meta">
+        <div><strong>Назначение</strong>ИИ-помощник для Tekla Structures и подготовки РД</div>
+        <div><strong>Контур</strong>Локальная работа без внешних API в штатном режиме</div>
+        <div><strong>Безопасность</strong>Dry-run, approval, whitelist tools, audit</div>
+        <div><strong>Статус</strong>MVP-пакет для обсуждения и пилота</div>
+      </div>
     </header>
+
     <section>
-      <h2>Основные документы</h2>
-      <div class="grid">
-        <article class="card">
-          <a href="industrial-rollout-plan.html">Пошаговый план внедрения</a>
-          <p>Организационная дорожная карта от инициативы до промышленной эксплуатации.</p>
-        </article>
-        <article class="card">
-          <a href="architecture.md">Architecture</a>
-          <p>Описание runtime-архитектуры и границ компонентов.</p>
-        </article>
-        <article class="card">
-          <a href="deployment-runbook.md">Deployment Runbook</a>
-          <p>Базовые шаги подготовки GPU-сервера и MVP-сервисов.</p>
-        </article>
-        <article class="card">
-          <a href="security-policy.md">Security Policy</a>
-          <p>Правила approval, audit и ограничений на действия агента.</p>
-        </article>
+      <h2>С чего начать</h2>
+      <p>
+        Если вы смотрите проект впервые, начните с четырех документов ниже. Они написаны как HTML-страницы, без необходимости читать
+        исходный Markdown или разбираться в структуре репозитория.
+      </p>
+      <div class="grid four">
+        <a class="card doc-card" href="industrial-rollout-plan.html">
+          <span class="type">Управление</span>
+          <span class="title">Пошаговый план внедрения</span>
+          <p>Дорожная карта от инициативы до промышленной эксплуатации: роли, вехи, gates, RACI и evidence pack.</p>
+        </a>
+        <a class="card doc-card" href="architecture.html">
+          <span class="type">Архитектура</span>
+          <span class="title">Как устроен агент</span>
+          <p>Понятное описание компонентов: GPU-сервер, LLM, RAG, orchestrator, policy, audit и Tekla workstation host.</p>
+        </a>
+        <a class="card doc-card" href="deployment-runbook.html">
+          <span class="type">Инфраструктура</span>
+          <span class="title">Как развернуть MVP</span>
+          <p>Подготовка железа, зависимостей, внутреннего контура поставки, сервисов и рабочих мест Tekla.</p>
+        </a>
+        <a class="card doc-card" href="security-policy.html">
+          <span class="type">Контроль</span>
+          <span class="title">Правила безопасности</span>
+          <p>Что агенту разрешено, что запрещено, где нужны подтверждения, какие логи должны сохраняться.</p>
+        </a>
       </div>
     </section>
+
+    <section>
+      <h2>Короткая картина решения</h2>
+      <img class="diagram" src="diagrams/runtime-architecture.svg" alt="Схема runtime-архитектуры Tekla/RD AI Agent">
+      <div class="grid three">
+        <div class="card">
+          <h3>1. Инженер формулирует задачу</h3>
+          <p>Например: создать балку, проверить выбранные объекты, подготовить черновик действий по армированию или объяснить фрагмент Tekla API.</p>
+        </div>
+        <div class="card">
+          <h3>2. Агент ищет контекст</h3>
+          <p>RAG подбирает релевантные примеры, документацию и внутренние правила. Эти документы считаются справкой, а не командами.</p>
+        </div>
+        <div class="card">
+          <h3>3. Выполняются только разрешенные инструменты</h3>
+          <p>Read-only операции можно выполнять сразу. Создание, изменение, удаление и выпуск результатов требуют dry-run и подтверждения.</p>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Что важно до пилота</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Направление</th>
+            <th>Что должно быть понятно</th>
+            <th>Где читать подробнее</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Ценность и рамки</td>
+            <td>Какие 3-5 сценариев берем в MVP, какие модели используем, кто принимает результат.</td>
+            <td><a href="industrial-rollout-plan.html">План внедрения</a></td>
+          </tr>
+          <tr>
+            <td>Техническая схема</td>
+            <td>Где стоит GPU-сервер, где живет workstation host, как идет запрос и где пишется audit.</td>
+            <td><a href="architecture.html">Архитектура</a></td>
+          </tr>
+          <tr>
+            <td>Развертывание</td>
+            <td>Какие пакеты, модели, Docker images и зеркала нужно подготовить до закрытого запуска.</td>
+            <td><a href="deployment-runbook.html">Развертывание</a></td>
+          </tr>
+          <tr>
+            <td>Ограничения</td>
+            <td>Что агент не должен делать автономно, какие действия требуют approval, как проверяется supply chain.</td>
+            <td><a href="security-policy.html">Правила безопасности</a></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Материалы для технической команды</h2>
+      <div class="grid three">
+        <div class="card">
+          <h3>BPMN 2.0 процессы</h3>
+          <p>Файлы процессов можно открыть в bpmn.io, Camunda Modeler или аналогичном инструменте.</p>
+          <ul>
+            <li><a href="bpmn/chat-tool-approval.bpmn">Запрос и approval tool calls</a></li>
+            <li><a href="bpmn/rag-ingestion.bpmn">Подготовка RAG-корпуса</a></li>
+            <li><a href="bpmn/airgap-rollout.bpmn">Поставка в закрытый контур</a></li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Схемы</h3>
+          <p>SVG-диаграммы можно использовать в презентациях и протоколах обсуждения.</p>
+          <ul>
+            <li><a href="diagrams/runtime-architecture.svg">Runtime-архитектура</a></li>
+            <li><a href="diagrams/request-flow.svg">Процесс запроса</a></li>
+            <li><a href="diagrams/deployment-boundaries.svg">Границы развертывания</a></li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Репозиторий</h3>
+          <p>Код, конфиги и исходные Markdown-документы остаются доступны в GitHub.</p>
+          <ul>
+            <li><a href="https://github.com/Hitek5/tekla-rd-ai-agent">Открыть репозиторий</a></li>
+            <li><a href="https://github.com/Hitek5/tekla-rd-ai-agent/tree/main/configs">Конфиги MVP</a></li>
+            <li><a href="https://github.com/Hitek5/tekla-rd-ai-agent/tree/main/services/orchestrator">Orchestrator</a></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <p class="footer">Документация подготовлена для обсуждения MVP и пилотного запуска. Для промышленного ввода нужны формальные согласования, приемка и передача в эксплуатацию.</p>
   </main>
 </body>
 </html>

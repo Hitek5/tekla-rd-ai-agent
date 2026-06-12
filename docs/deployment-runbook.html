@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Развертывание Tekla/RD AI Agent</title>
+  <link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+  <main class="page">
+    <div class="topbar">
+      <span>Tekla/RD AI Agent MVP</span>
+      <nav>
+        <a href="index.html">Главная</a>
+        <a href="architecture.html">Архитектура</a>
+        <a href="deployment-runbook.html">Развертывание</a>
+        <a href="security-policy.html">Безопасность</a>
+        <a href="industrial-rollout-plan.html">План внедрения</a>
+      </nav>
+    </div>
+
+    <header class="hero">
+      <h1>План развертывания MVP</h1>
+      <p class="subtitle">
+        Практический runbook для подготовки GPU-сервера, внутренней поставки зависимостей, запуска сервисов MVP и подключения
+        рабочих мест Tekla. Документ написан для инфраструктуры, эксплуатации и технического руководителя пилота.
+      </p>
+      <div class="meta">
+        <div><strong>Сервер</strong>Ubuntu 24.04 LTS, NVIDIA GPU, Docker</div>
+        <div><strong>Сервисы</strong>LLM, RAG, orchestrator, nginx, audit</div>
+        <div><strong>Клиенты</strong>Windows workstation с Tekla</div>
+        <div><strong>Контур</strong>Работа без внешних обращений после подготовки</div>
+      </div>
+    </header>
+
+    <section>
+      <h2>1. Границы развертывания</h2>
+      <img class="diagram" src="diagrams/deployment-boundaries.svg" alt="Границы развертывания">
+      <p>
+        Развертывание делится на подготовку внешних артефактов и работу внутри закрытого контура. Все Docker images, Python wheels,
+        NuGet packages, Git bundles, модели и документация должны быть заранее собраны, проверены, захешированы и импортированы во внутренние хранилища.
+      </p>
+    </section>
+
+    <section>
+      <h2>2. Инвентаризация перед установкой</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Что проверить</th>
+            <th>Минимально нужно зафиксировать</th>
+            <th>Почему это важно</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>GPU и драйвер</td>
+            <td>Модель карты, объем VRAM, версия драйвера, результат `nvidia-smi`.</td>
+            <td>От этого зависит модель, quantization, CUDA/PyTorch runtime и возможность fine-tuning.</td>
+          </tr>
+          <tr>
+            <td>CPU/RAM/Storage</td>
+            <td>i9-12900, 64 GB RAM, SSD/HDD layout, свободное место под модели и Docker layers.</td>
+            <td>512 GB SSD быстро закончится; модели, datasets и cache лучше вынести на отдельный NVMe/раздел.</td>
+          </tr>
+          <tr>
+            <td>Сеть</td>
+            <td>DNS-имя сервиса, доступы рабочих мест к API, доступы администраторов, TLS.</td>
+            <td>Нужно исключить неучтенные endpoint и ручные обходы.</td>
+          </tr>
+          <tr>
+            <td>Tekla workstations</td>
+            <td>Версия Tekla Structures, .NET/Windows, права установки локального host.</td>
+            <td>Tekla Open API адаптер должен собираться и запускаться в совместимой среде.</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>3. Подготовка GPU-сервера</h2>
+      <ol class="steps">
+        <li><strong>Установить ОС.</strong> Базовый вариант - Ubuntu 24.04 LTS, отдельные разделы под Docker, модели, audit и datasets.</li>
+        <li><strong>Установить NVIDIA driver.</strong> Версия выбирается под фактическую GPU и согласуется с выбранным CUDA/PyTorch runtime.</li>
+        <li><strong>Установить Docker и NVIDIA Container Toolkit.</strong> Проверить запуск GPU контейнера и доступность устройства внутри контейнера.</li>
+        <li><strong>Подготовить Python runtime.</strong> Для MVP использовать Python 3.12 или 3.13; не закреплять неподтвержденные версии.</li>
+        <li><strong>Настроить сервисные учетные записи.</strong> Отдельный пользователь для orchestrator, ограниченные права на директории и журналы.</li>
+        <li><strong>Настроить мониторинг.</strong> CPU, RAM, GPU, диск, HTTP health, ошибки orchestrator, размер audit logs.</li>
+      </ol>
+      <div class="callout warning">
+        <strong>Важно:</strong> `scripts/bootstrap_ubuntu_gpu.sh` является стартовым шаблоном, а не unattended-инсталлятором для production.
+        Перед применением его нужно адаптировать под внутренние репозитории пакетов и утвержденные версии.
+      </div>
+    </section>
+
+    <section>
+      <h2>4. Поставка зависимостей в закрытый контур</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Категория</th>
+            <th>Что включить</th>
+            <th>Контроль</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Docker / OCI</td>
+            <td>Qdrant, Ollama или другой LLM server, nginx, base image для orchestrator.</td>
+            <td>Версия, digest, источник, дата загрузки, результат scan.</td>
+          </tr>
+          <tr>
+            <td>Python wheels</td>
+            <td>FastAPI stack, httpx, pydantic, PyYAML, pytest/ruff для проверок, optional Qdrant client.</td>
+            <td>Lock-файл, hash, установка без внешнего доступа.</td>
+          </tr>
+          <tr>
+            <td>NuGet</td>
+            <td>Newtonsoft.Json и зависимости workstation host; позже - утвержденные Tekla Open API references.</td>
+            <td>Внутренний NuGet feed, версии, совместимость с workstation.</td>
+          </tr>
+          <tr>
+            <td>Модели</td>
+            <td>GGUF/HF snapshots для Qwen/DeepSeek или выбранной альтернативы.</td>
+            <td>License, source revision, sha256, hardware profile, назначение.</td>
+          </tr>
+          <tr>
+            <td>Git mirrors</td>
+            <td>Текущий репозиторий, Tekla examples, MCP references, внутренние примеры.</td>
+            <td>Зеркало в корпоративном Git, запрет прямого pull из интернета в штатном контуре.</td>
+          </tr>
+        </tbody>
+      </table>
+      <pre><code>powershell
+.\scripts\prepare_airgap_bundle.ps1 -OutputDir airgap-bundle
+</code></pre>
+    </section>
+
+    <section>
+      <h2>5. Запуск MVP-сервисов</h2>
+      <ol class="steps">
+        <li><strong>Скопировать `.env.example` в `.env`.</strong> Заполнить `LLM_BASE_URL`, `LLM_MODEL`, `RAG_CHUNKS_PATH`, `AUDIT_LOG_PATH`.</li>
+        <li><strong>Подготовить RAG-корпус.</strong> Запустить chunking только по разрешенным источникам и проверить JSONL.</li>
+        <li><strong>Запустить LLM server.</strong> Для быстрого MVP подойдет llama.cpp/Ollama; для throughput - vLLM/SGLang после проверки GPU.</li>
+        <li><strong>Запустить orchestrator.</strong> Проверить `/health`, доступ к LLM, доступ к RAG и запись audit.</li>
+        <li><strong>Поставить nginx/TLS.</strong> Внешним клиентам отдавать только внутренний HTTPS endpoint, не raw debug-порты.</li>
+        <li><strong>Прогнать smoke tests.</strong> Проверить read-only flow, dry-run mutation, блокировку unknown tool, запись audit.</li>
+      </ol>
+      <pre><code>bash
+docker compose -f docker-compose.mvp.yml up --build
+</code></pre>
+    </section>
+
+    <section>
+      <h2>6. Подключение рабочего места Tekla</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Шаг</th>
+            <th>Действие</th>
+            <th>Критерий готовности</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>6.1</td>
+            <td>Собрать `TeklaWorkstationHost` на машине с установленным .NET SDK/Build Tools.</td>
+            <td>Host стартует и отвечает на `GET /health`.</td>
+          </tr>
+          <tr>
+            <td>6.2</td>
+            <td>Запустить host в stub-режиме рядом с Tekla, убедиться, что orchestrator может отправить dry-run.</td>
+            <td>Dry-run не меняет модель и возвращает понятный результат.</td>
+          </tr>
+          <tr>
+            <td>6.3</td>
+            <td>Подключить Tekla Open API adapter для `GetSelection`, `QueryObjects`, `ValidateModel`.</td>
+            <td>Read-only tools возвращают данные с тестовой модели.</td>
+          </tr>
+          <tr>
+            <td>6.4</td>
+            <td>Добавить create tools только для копий моделей и только после approval.</td>
+            <td>Без approval header host блокирует mutating request.</td>
+          </tr>
+          <tr>
+            <td>6.5</td>
+            <td>Оформить установочный пакет и инструкцию отката.</td>
+            <td>Workstation host можно удалить или отключить регламентно.</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>7. Acceptance checklist</h2>
+      <div class="grid two">
+        <div class="card">
+          <h3>До пилота</h3>
+          <ul>
+            <li>Сервисы запускаются без внешнего доступа.</li>
+            <li>LLM endpoint стабилен на тестовых запросах.</li>
+            <li>RAG источники имеют owner и статус проверки.</li>
+            <li>Policy tests проходят.</li>
+            <li>Audit пишется для chat и tool calls.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Перед промышленной эксплуатацией</h3>
+          <ul>
+            <li>Есть operational runbook и канал поддержки.</li>
+            <li>Есть backup/restore и rollback plan.</li>
+            <li>Есть pilot report и список известных ограничений.</li>
+            <li>Есть утвержденный model catalog.</li>
+            <li>Есть регламент обновления моделей, prompts, tools и RAG.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+  </main>
+</body>
+</html>
+
