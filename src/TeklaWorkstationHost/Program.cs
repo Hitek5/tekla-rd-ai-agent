@@ -21,8 +21,9 @@ namespace TeklaWorkstationHost
             if (!verifier.Enabled)
             {
                 Console.WriteLine(
-                    "WARNING: TEKLA_AGENT_APPROVAL_SECRET not set. Approval signatures are NOT " +
-                    "verified — dev mode only. Set it before any pilot use."
+                    "WARNING: TEKLA_AGENT_APPROVAL_SECRET not set. The host fails closed — " +
+                    "ALL mutating tool calls will be REJECTED until you set it to the same " +
+                    "value as the orchestrator's APPROVAL_SECRET. Read-only tools still work."
                 );
             }
 
@@ -245,7 +246,10 @@ namespace TeklaWorkstationHost
         {
             if (!Enabled)
             {
-                return ApprovalCheck.Pass("unverified_dev_mode");
+                // Fail closed: without the shared secret we cannot verify any
+                // approval, so a mutating call must be rejected rather than waved
+                // through. The operator must set TEKLA_AGENT_APPROVAL_SECRET.
+                return ApprovalCheck.Fail("host_secret_not_configured");
             }
             if (string.IsNullOrWhiteSpace(token))
             {

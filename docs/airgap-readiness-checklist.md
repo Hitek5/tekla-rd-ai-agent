@@ -29,7 +29,7 @@
 
 - ☐ `API_KEY` задан непустым (иначе API открыт). Проверка: `GET /health` → `api_auth_enabled: true`.
 - ☐ `APPROVER_API_KEY` задан и **отличается** от `API_KEY`; выдан только согласующим инженерам.
-- ☐ `APPROVAL_SECRET` — случайные ≥32 символа; **тот же** экспортирован на АРМ как `TEKLA_AGENT_APPROVAL_SECRET`.
+- ☐ `APPROVAL_SECRET` — случайные ≥32 символа; **тот же** экспортирован на АРМ как `TEKLA_AGENT_APPROVAL_SECRET`. ✔ оркестратор **не стартует** с дефолтным/известным секретом; ✔ C#-хост **отклоняет** изменяющие вызовы, если секрет на АРМ не задан (fail-closed).
 - ☐ Секреты хранятся вне репозитория (vault/systemd `EnvironmentFile` с правами `600`), не в образе.
 - ✔ Approval-токены подписаны HMAC, привязаны к (tool, args, user, project), одноразовые и истекают (`APPROVAL_TTL_SECONDS`).
 

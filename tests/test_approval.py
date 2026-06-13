@@ -29,6 +29,28 @@ def test_weak_secret_rejected(tmp_path: Path) -> None:
         ApprovalSigner("short", NonceLedger(tmp_path / "l.log"))
 
 
+def test_default_placeholder_secret_rejected(tmp_path: Path) -> None:
+    # The shipped config default must never be accepted (forgeable tokens).
+    with pytest.raises(ApprovalError):
+        ApprovalSigner(
+            "change-me-please-set-a-32-char-secret", NonceLedger(tmp_path / "l.log")
+        )
+
+
+def test_consume_false_does_not_burn(tmp_path: Path) -> None:
+    # Regression: the nonce must survive verification until the call actually
+    # executes, so a policy rejection does not waste a single-use approval.
+    signer = make_signer(tmp_path)
+    token = signer.mint(
+        tool="CreateBeam", args=ARGS, user="ivan", project_id="P1", approver="lead", nonce="n1"
+    )
+    kwargs = dict(tool="CreateBeam", args=ARGS, user="ivan", project_id="P1")
+    assert signer.verify(token, consume=False, **kwargs).valid
+    assert signer.verify(token, consume=False, **kwargs).valid  # still not burned
+    assert signer.verify(token, consume=True, **kwargs).valid  # now burned
+    assert not signer.verify(token, consume=True, **kwargs).valid
+
+
 def test_valid_token_verifies_once(tmp_path: Path) -> None:
     signer = make_signer(tmp_path)
     token = signer.mint(

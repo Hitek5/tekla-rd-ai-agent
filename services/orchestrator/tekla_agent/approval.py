@@ -127,6 +127,18 @@ class NonceLedger:
 class ApprovalSigner:
     """Mints and verifies approval tokens against a shared secret."""
 
+    # Well-known placeholder values that must never sign real tokens. Shipping
+    # any of these means anyone can forge approvals, so we refuse to start.
+    _INSECURE_SECRETS = frozenset(
+        {
+            "change-me-please-set-a-32-char-secret",
+            "change-me",
+            "changeme",
+            "secret",
+            "local-dev-key",
+        }
+    )
+
     def __init__(
         self,
         secret: str,
@@ -138,7 +150,13 @@ class ApprovalSigner:
         if not secret or len(secret) < 16:
             raise ApprovalError(
                 "Approval secret must be at least 16 characters. "
-                "Set AGENT_APPROVAL_SECRET to a strong random value."
+                "Set APPROVAL_SECRET to a strong random value."
+            )
+        if secret.strip().lower() in self._INSECURE_SECRETS or secret.startswith("change-me"):
+            raise ApprovalError(
+                "APPROVAL_SECRET is set to a well-known default. Generate a unique "
+                "random secret (e.g. `python -c \"import secrets; print(secrets.token_urlsafe(32))\"`) "
+                "and set the SAME value as TEKLA_AGENT_APPROVAL_SECRET on the workstation host."
             )
         self._secret = secret.encode("utf-8")
         self._ledger = ledger

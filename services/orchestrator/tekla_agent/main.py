@@ -511,7 +511,10 @@ async def tool_call(request: ToolCallRequest) -> ToolCallResponse:
     valid_args, args_reason, normalised = validate_args(request.tool, request.args)
     args_for_call = normalised if valid_args else request.args
 
-    # Cryptographically verify approval (only consumed on a real execution).
+    # Cryptographically verify approval WITHOUT consuming it yet: the nonce must
+    # only be burned once we know the call will actually execute. Otherwise a
+    # token rejected later by policy (e.g. production_model) is wasted and the
+    # engineer must mint a fresh one to retry on a safe copy.
     approval_verified = False
     approval_reason = "not_required"
     if not request.dry_run:
@@ -521,7 +524,7 @@ async def tool_call(request: ToolCallRequest) -> ToolCallResponse:
             args=args_for_call,
             user=request.user,
             project_id=request.project_id,
-            consume=True,
+            consume=False,
         )
         approval_verified = verdict.valid
         approval_reason = verdict.reason
@@ -580,6 +583,32 @@ async def tool_call(request: ToolCallRequest) -> ToolCallResponse:
                 "message": "Tool was validated but not sent to Tekla workstation.",
             },
         )
+
+    # Execution is now authorised by policy. Burn the single-use nonce here, so a
+    # token is only spent when the call actually proceeds to the workstation.
+    if decision.requires_approval:
+        consumed = approvals.verify(
+            request.approval_token,
+            tool=request.tool,
+            args=args_for_call,
+            user=request.user,
+            project_id=request.project_id,
+            consume=True,
+        )
+        if not consumed.valid:
+            audit.write(
+                "tool_call_approval_consume_failed",
+                user=request.user,
+                project_id=request.project_id,
+                tool=request.tool,
+                reason=consumed.reason,
+            )
+            return ToolCallResponse(
+                allowed=False,
+                decision="blocked_requires_approval",
+                reason=consumed.reason,
+                dry_run=False,
+            )
 
     # Forward the approval token so the workstation host can re-verify it.
     headers = {}
