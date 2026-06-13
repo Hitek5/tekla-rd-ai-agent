@@ -85,6 +85,8 @@ serving_presets:
       -c {context_length} -ctk {kv_cache_type} -ctv {kv_cache_type}
       --host 127.0.0.1 --port 8000 --parallel {parallel} --api-key {api_key}
     ollama_num_ctx: 8192
+    ollama_modelfile: deploy/ollama/Modelfile.qwen-coder-7b-12gb
+    ollama_tag: tekla-coder-7b
 
   # 16 GB (RTX 5070 Ti): longer context, or step up to 14B at Q4.
   vram_16gb:
@@ -116,6 +118,8 @@ serving_presets:
       -c {context_length} -ctk {kv_cache_type} -ctv {kv_cache_type}
       --host 127.0.0.1 --port 8000 --parallel {parallel} --api-key {api_key}
     ollama_num_ctx: 24576
+    ollama_modelfile: deploy/ollama/Modelfile.qwen-coder-14b-24gb
+    ollama_tag: tekla-coder-14b
 
 # Maps detected VRAM (GB) to a preset. serve_model.py picks the largest preset
 # whose threshold is <= detected VRAM.

@@ -59,6 +59,19 @@ def test_dry_run_mutating_tool_allowed_without_approval() -> None:
     assert body["dry_run"] is True
 
 
+def test_dry_run_invalid_args_not_allowed() -> None:
+    # Preflight must not report an unexecutable call as allowed.
+    resp = client.post(
+        "/tool-calls",
+        headers=AUTH,
+        json={"tool": "CreateBeam", "args": {"profile": "HEA300"}, "dry_run": True},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["allowed"] is False
+    assert body["decision"] == "blocked_invalid_args"
+
+
 def test_execute_mutating_tool_blocked_without_approval() -> None:
     resp = client.post(
         "/tool-calls",

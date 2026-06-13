@@ -27,7 +27,11 @@
 The approval token splits duties: the **orchestrator** is authoritative for
 argument binding and single-use (replay) protection; the **C# workstation host**
 independently re-verifies the signature, expiry and target tool with the shared
-secret, so a mutation cannot proceed even if the orchestrator is bypassed.
+secret, **and keeps its own single-use nonce ledger**, so a token replayed
+directly against the host (a bypass around the orchestrator) is rejected after
+one use. Argument binding is not re-checked on the host because recomputing the
+canonical args hash identically across Python and .NET is brittle; the
+orchestrator remains authoritative for it.
 
 ## Approval levels
 

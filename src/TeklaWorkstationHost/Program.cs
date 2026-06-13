@@ -231,15 +231,54 @@ namespace TeklaWorkstationHost
     internal sealed class ApprovalVerifier
     {
         private readonly byte[] _secret;
+        private readonly object _lock = new object();
+        private readonly HashSet<string> _seenNonces = new HashSet<string>(StringComparer.Ordinal);
+        private readonly string _noncePath;
 
         public ApprovalVerifier(string secret)
         {
             _secret = string.IsNullOrEmpty(secret) ? null : Encoding.UTF8.GetBytes(secret);
+
+            var dir = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "TeklaAgent"
+            );
+            Directory.CreateDirectory(dir);
+            _noncePath = Path.Combine(dir, "consumed-nonces.log");
+            if (File.Exists(_noncePath))
+            {
+                foreach (var line in File.ReadAllLines(_noncePath))
+                {
+                    var trimmed = line.Trim();
+                    if (trimmed.Length > 0)
+                    {
+                        _seenNonces.Add(trimmed);
+                    }
+                }
+            }
         }
 
         public bool Enabled
         {
             get { return _secret != null; }
+        }
+
+        // Host-side single-use ledger: burns a nonce the first time the host sees
+        // it and persists it, so a token replayed directly against the host (a
+        // bypass around the orchestrator) is rejected after its one use. Returns
+        // false if the nonce was already spent.
+        private bool BurnNonce(string nonce)
+        {
+            lock (_lock)
+            {
+                if (_seenNonces.Contains(nonce))
+                {
+                    return false;
+                }
+                _seenNonces.Add(nonce);
+                File.AppendAllText(_noncePath, nonce + Environment.NewLine, Encoding.UTF8);
+                return true;
+            }
         }
 
         public ApprovalCheck Verify(string token, string expectedTool)
@@ -300,6 +339,20 @@ namespace TeklaWorkstationHost
             if (!string.Equals(claims.Value<string>("tool"), expectedTool, StringComparison.Ordinal))
             {
                 return ApprovalCheck.Fail("tool_mismatch");
+            }
+
+            // Single-use: burn the nonce so the token cannot be replayed against
+            // the host. Argument binding (args_hash) stays authoritative at the
+            // orchestrator — recomputing the canonical args hash across Python and
+            // .NET is brittle, so we do not duplicate it here.
+            var nonce = claims.Value<string>("nonce");
+            if (string.IsNullOrEmpty(nonce))
+            {
+                return ApprovalCheck.Fail("missing_nonce");
+            }
+            if (!BurnNonce(nonce))
+            {
+                return ApprovalCheck.Fail("already_used");
             }
 
             return ApprovalCheck.Pass("approved");

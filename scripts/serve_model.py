@@ -97,6 +97,10 @@ def main() -> None:
     parser.add_argument("--model-dir", type=Path, default=Path("data/models/gguf"))
     parser.add_argument("--engine", choices=["llama.cpp", "ollama"], default="llama.cpp")
     parser.add_argument("--api-key", default="local-dev-key")
+    parser.add_argument("--ollama-modelfile", type=Path, default=None,
+                        help="Modelfile to import the verified GGUF from (defaults to the preset).")
+    parser.add_argument("--ollama-model", default=None,
+                        help="Ollama model tag (defaults to the preset).")
     parser.add_argument("--vram-gb", type=float, default=None, help="Override autodetection.")
     parser.add_argument("--skip-verify", action="store_true", help="DANGEROUS: skip integrity check.")
     parser.add_argument("--run", action="store_true", help="Execute instead of printing the command.")
@@ -113,8 +117,8 @@ def main() -> None:
     if not args.skip_verify:
         verify_model(args.manifest, preset["gguf_file"], args.model_dir / preset["gguf_file"])
 
-    extra_env: dict[str, str] = {}
     if args.engine == "llama.cpp":
+        # llama.cpp serves the verified GGUF file directly.
         command = preset["llama_cpp"].format(
             model_dir=args.model_dir,
             gguf_file=preset["gguf_file"],
@@ -125,19 +129,41 @@ def main() -> None:
             api_key=args.api_key,
         )
         argv = shlex.split(command)
-    else:  # ollama: env vars configure the server, not argv
-        extra_env = {
-            "OLLAMA_NUM_PARALLEL": str(preset["parallel"]),
-            "OLLAMA_CONTEXT_LENGTH": str(preset["ollama_num_ctx"]),
-        }
-        argv = ["ollama", "serve"]
-        env_prefix = " ".join(f"{k}={v}" for k, v in extra_env.items())
-        command = f"{env_prefix} {' '.join(argv)}"
+        if args.run:
+            print(f"[run] {command}", file=sys.stderr)
+            raise SystemExit(subprocess.call(argv))
+        print(command)
+        return
+
+    # ollama: `ollama serve` alone would serve whatever model is already
+    # installed, defeating the SHA-256 guarantee. So we first import the VERIFIED
+    # GGUF into ollama under a known tag (`ollama create -f <Modelfile>`, whose
+    # FROM points at the verified file), then serve. The Modelfile is required —
+    # we never silently fall back to the daemon's existing state.
+    modelfile = args.ollama_modelfile or (
+        Path(preset["ollama_modelfile"]) if preset.get("ollama_modelfile") else None
+    )
+    if modelfile is None:
+        raise SystemExit(
+            f"Preset '{name}' has no ollama_modelfile; pass --ollama-modelfile so the "
+            "verified GGUF is the model that gets served."
+        )
+    tag = args.ollama_model or preset.get("ollama_tag") or f"tekla-{name}"
+    extra_env = {
+        "OLLAMA_NUM_PARALLEL": str(preset["parallel"]),
+        "OLLAMA_CONTEXT_LENGTH": str(preset["ollama_num_ctx"]),
+    }
+    env_prefix = " ".join(f"{k}={v}" for k, v in extra_env.items())
+    create_cmd = f"ollama create {tag} -f {modelfile}"
+    command = f"{create_cmd} && {env_prefix} ollama serve"
 
     if args.run:
-        print(f"[run] {command}", file=sys.stderr)
-        run_env = {**os.environ, **extra_env} if extra_env else None
-        raise SystemExit(subprocess.call(argv, env=run_env))
+        print(f"[run] {create_cmd}", file=sys.stderr)
+        rc = subprocess.call(["ollama", "create", tag, "-f", str(modelfile)])
+        if rc != 0:
+            raise SystemExit(rc)
+        print(f"[run] {env_prefix} ollama serve", file=sys.stderr)
+        raise SystemExit(subprocess.call(["ollama", "serve"], env={**os.environ, **extra_env}))
     print(command)
 
 

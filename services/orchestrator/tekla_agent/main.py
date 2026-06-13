@@ -553,19 +553,23 @@ async def tool_call(request: ToolCallRequest) -> ToolCallResponse:
         reason=decision.reason,
     )
 
-    if not valid_args and decision.allowed and not request.dry_run:
-        return ToolCallResponse(
-            allowed=False,
-            decision="blocked_invalid_args",
-            reason=args_reason,
-            dry_run=request.dry_run,
-        )
-
+    # Policy decision first (so unknown tools report blocked_unknown_tool, etc.).
     if not decision.allowed:
         return ToolCallResponse(
             allowed=False,
             decision=decision.decision,
             reason=decision.reason,
+            dry_run=request.dry_run,
+        )
+
+    # Invalid args are never "allowed", even in dry-run/preflight: a client that
+    # gates on the top-level `allowed` field must not treat an unexecutable call
+    # as safe.
+    if not valid_args:
+        return ToolCallResponse(
+            allowed=False,
+            decision="blocked_invalid_args",
+            reason=args_reason,
             dry_run=request.dry_run,
         )
 
