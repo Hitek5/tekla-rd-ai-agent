@@ -5,6 +5,7 @@ import time. Audit/ledger paths point at a temp dir so the test never writes int
 the repo.
 """
 
+import asyncio
 import os
 import tempfile
 
@@ -144,6 +145,64 @@ def test_oversized_body_returns_413() -> None:
     huge = "a" * 70_000
     resp = client.post("/chat", headers=AUTH, json={"message": huge, "user": "ivan"})
     assert resp.status_code == 413
+
+
+def test_body_limit_blocks_chunked_without_content_length() -> None:
+    # Directly exercise the ASGI middleware: a chunked upload with NO
+    # Content-Length header must still be capped, and the app never invoked.
+    from tekla_agent.main import MaxBodySizeMiddleware
+
+    called = {"app": False}
+
+    async def app(scope, receive, send):
+        called["app"] = True
+
+    mw = MaxBodySizeMiddleware(app, max_bytes=10)
+    scope = {"type": "http", "headers": []}  # no content-length
+    chunks = [
+        {"type": "http.request", "body": b"12345", "more_body": True},
+        {"type": "http.request", "body": b"67890OVERFLOW", "more_body": False},
+    ]
+
+    async def receive():
+        return chunks.pop(0)
+
+    sent: list = []
+
+    async def send(message):
+        sent.append(message)
+
+    asyncio.run(mw(scope, receive, send))
+    assert called["app"] is False
+    assert sent[0]["status"] == 413
+
+
+def test_body_limit_replays_small_body() -> None:
+    from tekla_agent.main import MaxBodySizeMiddleware
+
+    seen = {}
+
+    async def app(scope, receive, send):
+        message = await receive()
+        seen["body"] = message["body"]
+        await send({"type": "http.response.start", "status": 200, "headers": []})
+        await send({"type": "http.response.body", "body": b"ok"})
+
+    mw = MaxBodySizeMiddleware(app, max_bytes=1000)
+    scope = {"type": "http", "headers": []}
+    chunks = [{"type": "http.request", "body": b"hello", "more_body": False}]
+
+    async def receive():
+        return chunks.pop(0)
+
+    sent: list = []
+
+    async def send(message):
+        sent.append(message)
+
+    asyncio.run(mw(scope, receive, send))
+    assert seen["body"] == b"hello"
+    assert sent[0]["status"] == 200
 
 
 def test_blocked_prompt_pattern_russian() -> None:

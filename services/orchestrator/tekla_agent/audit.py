@@ -114,8 +114,18 @@ def verify_chain(path: Path) -> dict[str, Any]:
             except ValueError:
                 return {"ok": False, "records": count, "line": lineno, "reason": "invalid_json"}
 
+            # A syntactically valid line that is not a well-formed audit object
+            # (a scalar/list, or a non-integer seq) is a corrupt/tampered record,
+            # not a server error — report it rather than raising a 500.
+            if not isinstance(record, dict):
+                return {"ok": False, "records": count, "line": lineno, "reason": "not_an_object"}
+
             expected_seq += 1
-            if int(record.get("seq", -1)) != expected_seq:
+            try:
+                seq = int(record.get("seq"))
+            except (TypeError, ValueError):
+                return {"ok": False, "records": count, "line": lineno, "reason": "bad_seq"}
+            if seq != expected_seq:
                 return {
                     "ok": False,
                     "records": count,

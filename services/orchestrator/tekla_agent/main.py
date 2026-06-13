@@ -43,6 +43,80 @@ llm = OpenAICompatibleClient(
 _rate_buckets: dict[str, deque[float]] = {}
 
 
+class MaxBodySizeMiddleware:
+    """Enforce a request-body cap at the ASGI layer.
+
+    Trusting ``Content-Length`` alone is not enough: a chunked request (or one
+    that simply omits the header) would slip past and be read into memory in
+    full. Here we buffer incoming body chunks and stop the moment the running
+    total exceeds the cap — so at most ``max_bytes`` (+ one chunk) is ever held —
+    then replay the buffered body to the downstream app.
+    """
+
+    def __init__(self, app, max_bytes: int):
+        self.app = app
+        self.max_bytes = max_bytes
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        # Fast path: reject early if Content-Length already declares too much.
+        for name, value in scope.get("headers", []):
+            if name == b"content-length":
+                try:
+                    if int(value) > self.max_bytes:
+                        await self._reject(send)
+                        return
+                except ValueError:
+                    pass
+                break
+
+        body = b""
+        more_body = True
+        while more_body:
+            message = await receive()
+            if message["type"] != "http.request":
+                # e.g. http.disconnect — hand the raw stream back to the app.
+                await self.app(scope, receive, send)
+                return
+            body += message.get("body", b"")
+            more_body = message.get("more_body", False)
+            if len(body) > self.max_bytes:
+                await self._reject(send)
+                return
+
+        replayed = False
+
+        async def replay() -> dict:
+            nonlocal replayed
+            if not replayed:
+                replayed = True
+                return {"type": "http.request", "body": body, "more_body": False}
+            return {"type": "http.disconnect"}
+
+        await self.app(scope, replay, send)
+
+    @staticmethod
+    async def _reject(send) -> None:
+        payload = b'{"detail":"Request body too large"}'
+        await send(
+            {
+                "type": "http.response.start",
+                "status": 413,
+                "headers": [
+                    (b"content-type", b"application/json"),
+                    (b"content-length", str(len(payload)).encode()),
+                ],
+            }
+        )
+        await send({"type": "http.response.body", "body": payload})
+
+
+app.add_middleware(MaxBodySizeMiddleware, max_bytes=settings.max_request_bytes)
+
+
 def require_api_key(authorization: str = Header(default="")) -> None:
     """Bearer-token gate for the whole API.
 
@@ -65,14 +139,11 @@ def require_approver_key(x_approver_key: str = Header(default="")) -> None:
 
 @app.middleware("http")
 async def guardrails(request: Request, call_next):
+    # Body-size enforcement lives in MaxBodySizeMiddleware (ASGI level) so it works
+    # for chunked / missing-Content-Length requests too. Here we only rate-limit.
     # NOTE: raising HTTPException here would bypass the exception handler (it sits
-    # inside the middleware stack) and surface as a 500, so we return responses
-    # directly to produce the advertised 413/429 status codes.
-    length = request.headers.get("content-length")
-    if length and int(length) > settings.max_request_bytes:
-        return JSONResponse(status_code=413, content={"detail": "Request body too large"})
-
-    # Per-client sliding-window rate limit.
+    # inside the middleware stack) and surface as a 500, so we return a response
+    # directly to produce the advertised 429 status code.
     client = request.client.host if request.client else "unknown"
     now = time.monotonic()
     bucket = _rate_buckets.setdefault(client, deque())

@@ -41,6 +41,30 @@ def test_tampering_is_detected(tmp_path: Path) -> None:
     assert report["line"] == 1
 
 
+def test_non_object_line_reported_not_crashed(tmp_path: Path) -> None:
+    log = tmp_path / "audit.jsonl"
+    log.write_text('"just a string, not an object"\n', encoding="utf-8")
+    report = verify_chain(log)
+    assert not report["ok"]
+    assert report["reason"] == "not_an_object"
+
+
+def test_bad_seq_reported_not_crashed(tmp_path: Path) -> None:
+    log = tmp_path / "audit.jsonl"
+    log.write_text('{"seq": "abc", "prev_hash": "x", "hash": "y"}\n', encoding="utf-8")
+    report = verify_chain(log)
+    assert not report["ok"]
+    assert report["reason"] == "bad_seq"
+
+
+def test_null_seq_reported_not_crashed(tmp_path: Path) -> None:
+    log = tmp_path / "audit.jsonl"
+    log.write_text('{"seq": null, "prev_hash": "x", "hash": "y"}\n', encoding="utf-8")
+    report = verify_chain(log)
+    assert not report["ok"]
+    assert report["reason"] == "bad_seq"
+
+
 def test_deletion_is_detected(tmp_path: Path) -> None:
     log = tmp_path / "audit.jsonl"
     logger = AuditLogger(log)
