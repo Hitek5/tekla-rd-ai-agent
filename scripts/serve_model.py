@@ -25,6 +25,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import shlex
 import subprocess
 import sys
@@ -112,6 +113,7 @@ def main() -> None:
     if not args.skip_verify:
         verify_model(args.manifest, preset["gguf_file"], args.model_dir / preset["gguf_file"])
 
+    extra_env: dict[str, str] = {}
     if args.engine == "llama.cpp":
         command = preset["llama_cpp"].format(
             model_dir=args.model_dir,
@@ -122,16 +124,20 @@ def main() -> None:
             parallel=preset["parallel"],
             api_key=args.api_key,
         )
-    else:  # ollama
-        command = (
-            f"OLLAMA_NUM_PARALLEL={preset['parallel']} "
-            f"OLLAMA_CONTEXT_LENGTH={preset['ollama_num_ctx']} "
-            f"ollama serve"
-        )
+        argv = shlex.split(command)
+    else:  # ollama: env vars configure the server, not argv
+        extra_env = {
+            "OLLAMA_NUM_PARALLEL": str(preset["parallel"]),
+            "OLLAMA_CONTEXT_LENGTH": str(preset["ollama_num_ctx"]),
+        }
+        argv = ["ollama", "serve"]
+        env_prefix = " ".join(f"{k}={v}" for k, v in extra_env.items())
+        command = f"{env_prefix} {' '.join(argv)}"
 
     if args.run:
         print(f"[run] {command}", file=sys.stderr)
-        raise SystemExit(subprocess.call(shlex.split(command)))
+        run_env = {**os.environ, **extra_env} if extra_env else None
+        raise SystemExit(subprocess.call(argv, env=run_env))
     print(command)
 
 

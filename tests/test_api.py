@@ -100,7 +100,12 @@ def test_mint_and_inspect_approval() -> None:
         headers={"X-Approver-Key": "test-approver-key"},
         json={
             "tool": "CreateBeam",
-            "args": {"profile": "HEA300"},
+            "args": {
+                "start": {"x": 0, "y": 0, "z": 0},
+                "end": {"x": 6000, "y": 0, "z": 0},
+                "profile": "HEA300",
+                "material": "S355",
+            },
             "user": "ivan",
             "project_id": "P1",
             "approver": "lead",
@@ -112,11 +117,33 @@ def test_mint_and_inspect_approval() -> None:
     assert body["bound_to"]["tool"] == "CreateBeam"
 
 
+def test_mint_rejects_invalid_args() -> None:
+    resp = client.post(
+        "/approvals",
+        headers={"X-Approver-Key": "test-approver-key"},
+        json={
+            "tool": "CreateBeam",
+            "args": {"profile": "HEA300"},  # missing start/end/material
+            "user": "ivan",
+            "project_id": "P1",
+            "approver": "lead",
+        },
+    )
+    assert resp.status_code == 400
+
+
 def test_audit_chain_endpoint_ok() -> None:
     # Prior tests have written audit records; the chain must verify.
     resp = client.get("/audit/verify", headers=AUTH)
     assert resp.status_code == 200
     assert resp.json()["ok"] is True
+
+
+def test_oversized_body_returns_413() -> None:
+    # Guardrail middleware must return 413, not bubble up as a 500.
+    huge = "a" * 70_000
+    resp = client.post("/chat", headers=AUTH, json={"message": huge, "user": "ivan"})
+    assert resp.status_code == 413
 
 
 def test_blocked_prompt_pattern_russian() -> None:

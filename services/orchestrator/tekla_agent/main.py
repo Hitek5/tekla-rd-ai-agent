@@ -7,6 +7,7 @@ from typing import Any
 
 import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from tekla_agent.approval import ApprovalSigner, NonceLedger, args_fingerprint
@@ -15,7 +16,7 @@ from tekla_agent.config import settings
 from tekla_agent.llm import LLMError, OpenAICompatibleClient
 from tekla_agent.policy import ToolPolicy
 from tekla_agent.rag import LocalJsonlRetriever
-from tekla_agent.tools import extract_tool_call, known_tools, validate_args
+from tekla_agent.tools import extract_tool_call, known_tools, to_wire_args, validate_args
 
 app = FastAPI(title="Tekla/RD Local AI Agent Orchestrator", version="0.2.0")
 
@@ -64,10 +65,12 @@ def require_approver_key(x_approver_key: str = Header(default="")) -> None:
 
 @app.middleware("http")
 async def guardrails(request: Request, call_next):
-    # Reject oversized bodies up front (cheap DoS protection).
+    # NOTE: raising HTTPException here would bypass the exception handler (it sits
+    # inside the middleware stack) and surface as a 500, so we return responses
+    # directly to produce the advertised 413/429 status codes.
     length = request.headers.get("content-length")
     if length and int(length) > settings.max_request_bytes:
-        raise HTTPException(status_code=413, detail="Request body too large")
+        return JSONResponse(status_code=413, content={"detail": "Request body too large"})
 
     # Per-client sliding-window rate limit.
     client = request.client.host if request.client else "unknown"
@@ -76,7 +79,7 @@ async def guardrails(request: Request, call_next):
     while bucket and now - bucket[0] > 60:
         bucket.popleft()
     if len(bucket) >= settings.rate_limit_per_minute:
-        raise HTTPException(status_code=429, detail="Rate limit exceeded")
+        return JSONResponse(status_code=429, content={"detail": "Rate limit exceeded"})
     bucket.append(now)
 
     correlation_id = request.headers.get("x-correlation-id") or stable_hash(
@@ -389,11 +392,20 @@ async def mint_approval(request: MintApprovalRequest) -> MintApprovalResponse:
     if policy.describe_tool(request.tool) is None:
         raise HTTPException(status_code=400, detail=f"Unknown tool: {request.tool}")
 
+    # Bind the token to the SAME normalised args that /tool-calls will verify
+    # against. Without this, integer coords (0) vs Pydantic floats (0.0) and
+    # omitted nulls produce different hashes and every approved call fails as
+    # args_mismatch.
+    valid_args, args_reason, normalised = validate_args(request.tool, request.args)
+    if not valid_args:
+        raise HTTPException(status_code=400, detail=f"Cannot approve invalid args: {args_reason}")
+    args_for_token = normalised if normalised is not None else request.args
+
     nonce = secrets.token_urlsafe(16)
     ttl = request.ttl_seconds or settings.approval_ttl_seconds
     token = approvals.mint(
         tool=request.tool,
-        args=request.args,
+        args=args_for_token,
         user=request.user,
         project_id=request.project_id,
         approver=request.approver,
@@ -403,7 +415,7 @@ async def mint_approval(request: MintApprovalRequest) -> MintApprovalResponse:
     audit.write(
         "approval_minted",
         tool=request.tool,
-        args_hash=args_fingerprint(request.args),
+        args_hash=args_fingerprint(args_for_token),
         user=request.user,
         project_id=request.project_id,
         approver=request.approver,
@@ -417,7 +429,7 @@ async def mint_approval(request: MintApprovalRequest) -> MintApprovalResponse:
             "tool": request.tool,
             "user": request.user,
             "project_id": request.project_id,
-            "args_hash": args_fingerprint(request.args),
+            "args_hash": args_fingerprint(args_for_token),
         },
     )
 
@@ -506,7 +518,7 @@ async def tool_call(request: ToolCallRequest) -> ToolCallResponse:
     async with httpx.AsyncClient(timeout=30.0) as client:
         response = await client.post(
             f"{request.workstation_url.rstrip('/')}/tools/{request.tool}",
-            json=args_for_call,
+            json=to_wire_args(request.tool, args_for_call),
             headers=headers,
         )
 

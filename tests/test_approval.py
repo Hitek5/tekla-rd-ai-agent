@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from tekla_agent.approval import ApprovalError, ApprovalSigner, NonceLedger
+from tekla_agent.tools import validate_args
 
 SECRET = "test-secret-at-least-16-chars-long"
 ARGS = {"start": {"x": 0, "y": 0, "z": 0}, "profile": "HEA300"}
@@ -84,6 +85,29 @@ def test_tampered_signature_rejected(tmp_path: Path) -> None:
     verdict = signer.verify(tampered, tool="CreateBeam", args=ARGS, user="ivan", project_id="P1")
     assert not verdict.valid
     assert verdict.reason == "bad_signature"
+
+
+def test_mint_and_verify_with_normalised_args(tmp_path: Path) -> None:
+    # Mirrors the server: mint binds to normalised args, /tool-calls verifies
+    # against normalised args. Integer coords must survive the round-trip.
+    signer = make_signer(tmp_path)
+    raw = {
+        "start": {"x": 0, "y": 0, "z": 0},
+        "end": {"x": 6000, "y": 0, "z": 0},
+        "profile": "HEA300",
+        "material": "S355",
+    }
+    _ok, _r, normalised = validate_args("CreateBeam", raw)
+    token = signer.mint(
+        tool="CreateBeam", args=normalised, user="ivan", project_id="P1",
+        approver="lead", nonce="n1",
+    )
+    # Second validation of the same raw input yields identical normalised args.
+    _ok2, _r2, normalised2 = validate_args("CreateBeam", raw)
+    verdict = signer.verify(
+        token, tool="CreateBeam", args=normalised2, user="ivan", project_id="P1"
+    )
+    assert verdict.valid
 
 
 def test_ledger_persists_across_restart(tmp_path: Path) -> None:
