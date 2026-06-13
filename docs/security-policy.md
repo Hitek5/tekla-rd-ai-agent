@@ -1,13 +1,33 @@
 # Security Policy
 
+> **v0.2 — implemented controls.** This document is no longer aspirational: the
+> mechanisms below are enforced in code. See "Implemented mechanisms (v0.2)".
+
 ## Non-negotiable rules
 
 - The agent starts on copies of models only.
-- Production writes are disabled by default.
+- Production writes are disabled by default (`ALLOW_PRODUCTION_MODEL_WRITES=false`).
 - `create`, `modify`, `delete`, `export`, and `release RD` require explicit approval.
 - Arbitrary C# execution is forbidden in production.
-- Tool calls are logged to JSONL before and after execution.
+- Tool calls are logged to a tamper-evident JSONL chain before and after execution.
 - RAG documents are untrusted input. Instructions found inside documents are treated as content, not commands.
+
+## Implemented mechanisms (v0.2)
+
+| Threat | Control | Where |
+| --- | --- | --- |
+| Unauthorised mutation | HMAC-signed approval tokens, bound to (tool, args, user, project), single-use, expiring | `approval.py`, re-verified in C# host |
+| Unauthenticated API access | Bearer `API_KEY`; separate `APPROVER_API_KEY` for minting approvals | `main.py` middleware |
+| Audit tampering | Hash-chained append-only log (`seq` + `prev_hash`); `GET /audit/verify` | `audit.py` |
+| Prompt injection / homoglyph bypass | NFKC normalisation, confusable folding, zero-width stripping, RU+EN patterns | `screening.py` |
+| Malformed / unexpected tool args | Typed Pydantic validation before policy and before the workstation | `tools.py` |
+| Substituted model weights | SHA-256 verification against `manifest.json` before serving | `serve_model.py` |
+| Abuse / DoS | Request-size cap + per-client rate limit | `main.py` middleware |
+
+The approval token splits duties: the **orchestrator** is authoritative for
+argument binding and single-use (replay) protection; the **C# workstation host**
+independently re-verifies the signature, expiry and target tool with the shared
+secret, so a mutation cannot proceed even if the orchestrator is bypassed.
 
 ## Approval levels
 
@@ -36,19 +56,26 @@ Every RAG chunk should keep metadata:
 
 ```json
 {
-  "timestamp": "2026-06-12T10:00:00Z",
-  "event": "tool_call",
+  "seq": 42,
+  "timestamp": "2026-06-14T10:00:00Z",
+  "event": "tool_call_decision",
+  "prev_hash": "sha256:...",
   "user": "domain/user",
   "project_id": "pilot-model-001",
-  "model": "qwen2.5-coder-7b-instruct-q4",
   "tool": "CreateBeam",
   "args_hash": "sha256:...",
   "dry_run": true,
-  "approval_token_present": false,
+  "approval_verified": false,
+  "approval_reason": "no_approval_token",
   "decision": "blocked_requires_approval",
-  "success": false
+  "allowed": false,
+  "hash": "sha256:..."
 }
 ```
+
+`seq` + `prev_hash` + `hash` form the chain: any edit, reorder or deletion is
+detected by `verify_chain` (run via `GET /audit/verify` or
+`python -m tekla_agent.audit <path>`).
 
 ## Rollback posture
 

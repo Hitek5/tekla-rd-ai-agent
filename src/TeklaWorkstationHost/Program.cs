@@ -2,9 +2,11 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Net;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using TeklaAgent.Contracts;
 
 namespace TeklaWorkstationHost
@@ -13,7 +15,18 @@ namespace TeklaWorkstationHost
     {
         private static void Main(string[] args)
         {
-            var host = new LocalToolHost(new StubTeklaFacade());
+            // Shared HMAC secret; MUST match the orchestrator's APPROVAL_SECRET.
+            var secret = Environment.GetEnvironmentVariable("TEKLA_AGENT_APPROVAL_SECRET");
+            var verifier = new ApprovalVerifier(secret);
+            if (!verifier.Enabled)
+            {
+                Console.WriteLine(
+                    "WARNING: TEKLA_AGENT_APPROVAL_SECRET not set. Approval signatures are NOT " +
+                    "verified — dev mode only. Set it before any pilot use."
+                );
+            }
+
+            var host = new LocalToolHost(new StubTeklaFacade(), verifier);
             host.RunAsync("http://127.0.0.1:51234/").GetAwaiter().GetResult();
         }
     }
@@ -45,10 +58,12 @@ namespace TeklaWorkstationHost
         };
 
         private readonly ITeklaFacade _tekla;
+        private readonly ApprovalVerifier _verifier;
 
-        public LocalToolHost(ITeklaFacade tekla)
+        public LocalToolHost(ITeklaFacade tekla, ApprovalVerifier verifier)
         {
             _tekla = tekla;
+            _verifier = verifier;
         }
 
         public async Task RunAsync(string prefix)
@@ -91,15 +106,20 @@ namespace TeklaWorkstationHost
                     return;
                 }
 
-                if (MutatingTools.Contains(tool) && string.IsNullOrWhiteSpace(context.Request.Headers["X-Agent-Approval"]))
+                if (MutatingTools.Contains(tool))
                 {
-                    Audit(tool, false, "blocked_missing_approval_header");
-                    await WriteJsonAsync(
-                        context,
-                        403,
-                        new { error = "Mutating tool requires X-Agent-Approval header", tool }
-                    ).ConfigureAwait(false);
-                    return;
+                    var token = context.Request.Headers["X-Agent-Approval"];
+                    var check = _verifier.Verify(token, tool);
+                    if (!check.Ok)
+                    {
+                        Audit(tool, false, "blocked_approval:" + check.Reason);
+                        await WriteJsonAsync(
+                            context,
+                            403,
+                            new { error = "Approval check failed", reason = check.Reason, tool }
+                        ).ConfigureAwait(false);
+                        return;
+                    }
                 }
 
                 var body = await ReadBodyAsync(context.Request).ConfigureAwait(false);
@@ -177,6 +197,139 @@ namespace TeklaWorkstationHost
                 message
             });
             File.AppendAllText(Path.Combine(dir, "mcp-audit.jsonl"), line + Environment.NewLine, Encoding.UTF8);
+        }
+    }
+
+    internal struct ApprovalCheck
+    {
+        public bool Ok;
+        public string Reason;
+
+        public static ApprovalCheck Fail(string reason)
+        {
+            return new ApprovalCheck { Ok = false, Reason = reason };
+        }
+
+        public static ApprovalCheck Pass(string reason)
+        {
+            return new ApprovalCheck { Ok = true, Reason = reason };
+        }
+    }
+
+    /// <summary>
+    /// Independently verifies the orchestrator's HMAC approval token on the
+    /// workstation, using the same shared secret. This is defence in depth: even
+    /// if the orchestrator were compromised or bypassed, a mutating call still
+    /// needs a token whose signature, expiry and target tool check out here.
+    ///
+    /// The orchestrator remains authoritative for argument binding and single-use
+    /// (replay) — the host deliberately does not recompute the args hash, because
+    /// canonical JSON across Python and .NET is brittle. Signature + expiry + tool
+    /// match is the high-value, low-risk subset to enforce locally.
+    /// </summary>
+    internal sealed class ApprovalVerifier
+    {
+        private readonly byte[] _secret;
+
+        public ApprovalVerifier(string secret)
+        {
+            _secret = string.IsNullOrEmpty(secret) ? null : Encoding.UTF8.GetBytes(secret);
+        }
+
+        public bool Enabled
+        {
+            get { return _secret != null; }
+        }
+
+        public ApprovalCheck Verify(string token, string expectedTool)
+        {
+            if (!Enabled)
+            {
+                return ApprovalCheck.Pass("unverified_dev_mode");
+            }
+            if (string.IsNullOrWhiteSpace(token))
+            {
+                return ApprovalCheck.Fail("missing_token");
+            }
+
+            var parts = token.Split('.');
+            if (parts.Length != 2)
+            {
+                return ApprovalCheck.Fail("malformed_token");
+            }
+
+            byte[] payloadBytes;
+            try
+            {
+                payloadBytes = Base64UrlDecode(parts[0]);
+            }
+            catch (FormatException)
+            {
+                return ApprovalCheck.Fail("malformed_payload");
+            }
+
+            string expectedSig;
+            using (var hmac = new HMACSHA256(_secret))
+            {
+                expectedSig = Base64UrlEncode(hmac.ComputeHash(payloadBytes));
+            }
+            if (!FixedTimeEquals(expectedSig, parts[1]))
+            {
+                return ApprovalCheck.Fail("bad_signature");
+            }
+
+            JObject claims;
+            try
+            {
+                claims = JObject.Parse(Encoding.UTF8.GetString(payloadBytes));
+            }
+            catch (JsonException)
+            {
+                return ApprovalCheck.Fail("bad_claims");
+            }
+
+            var exp = claims.Value<long?>("exp") ?? 0;
+            if (DateTimeOffset.UtcNow.ToUnixTimeSeconds() >= exp)
+            {
+                return ApprovalCheck.Fail("expired");
+            }
+            if (!string.Equals(claims.Value<string>("tool"), expectedTool, StringComparison.Ordinal))
+            {
+                return ApprovalCheck.Fail("tool_mismatch");
+            }
+
+            return ApprovalCheck.Pass("approved");
+        }
+
+        private static byte[] Base64UrlDecode(string input)
+        {
+            var s = input.Replace('-', '+').Replace('_', '/');
+            switch (s.Length % 4)
+            {
+                case 2: s += "=="; break;
+                case 3: s += "="; break;
+            }
+            return Convert.FromBase64String(s);
+        }
+
+        private static string Base64UrlEncode(byte[] input)
+        {
+            return Convert.ToBase64String(input).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+        }
+
+        // Constant-time string comparison (net48 lacks CryptographicOperations).
+        private static bool FixedTimeEquals(string a, string b)
+        {
+            if (a.Length != b.Length)
+            {
+                return false;
+            }
+            var diff = 0;
+            for (var i = 0; i < a.Length; i++)
+            {
+                diff |= a[i] ^ b[i];
+            }
+            return diff == 0;
         }
     }
 

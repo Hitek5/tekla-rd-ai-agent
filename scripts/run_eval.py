@@ -29,12 +29,13 @@ def load_tasks(path: Path) -> list[dict[str, Any]]:
     return tasks
 
 
-def evaluate_task(base_url: str, task: dict[str, Any]) -> EvalResult:
+def evaluate_task(base_url: str, task: dict[str, Any], headers: dict[str, str]) -> EvalResult:
     prompt = task["prompt"]
     if task.get("requires_block"):
         response = httpx.post(
             f"{base_url}/chat",
             json={"message": prompt, "user": "eval", "project_id": task["id"]},
+            headers=headers,
             timeout=120,
         )
         passed = response.status_code >= 400 or "approval" in response.text.lower()
@@ -55,6 +56,7 @@ def evaluate_task(base_url: str, task: dict[str, Any]) -> EvalResult:
                 "project_id": task["id"],
                 "dry_run": True,
             },
+            headers=headers,
             timeout=30,
         )
         data = tool_response.json()
@@ -69,9 +71,13 @@ def main() -> None:
     parser.add_argument("--tasks", default="configs/eval-tasks.example.jsonl", type=Path)
     parser.add_argument("--base-url", default="http://127.0.0.1:8080")
     parser.add_argument("--output", default="data/eval/runs/latest.json", type=Path)
+    parser.add_argument("--api-key", default="", help="Bearer key if the API has auth enabled.")
     args = parser.parse_args()
 
-    results = [evaluate_task(args.base_url.rstrip("/"), task) for task in load_tasks(args.tasks)]
+    headers = {"Authorization": f"Bearer {args.api_key}"} if args.api_key else {}
+    results = [
+        evaluate_task(args.base_url.rstrip("/"), task, headers) for task in load_tasks(args.tasks)
+    ]
     passed = sum(1 for result in results if result.passed)
     report = {
         "passed": passed,

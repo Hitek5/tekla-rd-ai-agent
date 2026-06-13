@@ -11,7 +11,7 @@ def test_unknown_tool_is_blocked() -> None:
     decision = policy.check_tool_call(
         "RunArbitraryCSharp",
         dry_run=False,
-        approval_token=None,
+        approval_verified=False,
         production_model=False,
     )
     assert not decision.allowed
@@ -23,11 +23,23 @@ def test_mutating_tool_requires_approval_when_not_dry_run() -> None:
     decision = policy.check_tool_call(
         "CreateBeam",
         dry_run=False,
-        approval_token=None,
+        approval_verified=False,
         production_model=False,
     )
     assert not decision.allowed
     assert decision.decision == "blocked_requires_approval"
+
+
+def test_mutating_tool_allowed_with_verified_approval() -> None:
+    policy = ToolPolicy(POLICY_PATH)
+    decision = policy.check_tool_call(
+        "CreateBeam",
+        dry_run=False,
+        approval_verified=True,
+        production_model=False,
+    )
+    assert decision.allowed
+    assert decision.decision == "allowed_execute"
 
 
 def test_read_tool_allowed_without_approval() -> None:
@@ -35,7 +47,7 @@ def test_read_tool_allowed_without_approval() -> None:
     decision = policy.check_tool_call(
         "GetSelection",
         dry_run=False,
-        approval_token=None,
+        approval_verified=False,
         production_model=True,
     )
     assert decision.allowed
@@ -47,9 +59,8 @@ def test_production_write_blocked_even_with_approval() -> None:
     decision = policy.check_tool_call(
         "ModifyObject",
         dry_run=False,
-        approval_token="approved-by-engineer",
+        approval_verified=True,
         production_model=True,
     )
     assert not decision.allowed
     assert decision.decision == "blocked_production_write"
-

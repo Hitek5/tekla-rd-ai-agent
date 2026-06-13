@@ -1,0 +1,56 @@
+from pathlib import Path
+
+from tekla_agent.audit import AuditLogger, verify_chain
+
+
+def test_chain_verifies(tmp_path: Path) -> None:
+    log = tmp_path / "audit.jsonl"
+    logger = AuditLogger(log)
+    logger.write("event_a", value=1)
+    logger.write("event_b", value=2)
+    logger.write("event_c", value=3)
+
+    report = verify_chain(log)
+    assert report["ok"]
+    assert report["records"] == 3
+
+
+def test_chain_continues_after_restart(tmp_path: Path) -> None:
+    log = tmp_path / "audit.jsonl"
+    AuditLogger(log).write("first", value=1)
+    # New logger instance must pick up seq/prev_hash from disk.
+    AuditLogger(log).write("second", value=2)
+    report = verify_chain(log)
+    assert report["ok"]
+    assert report["records"] == 2
+
+
+def test_tampering_is_detected(tmp_path: Path) -> None:
+    log = tmp_path / "audit.jsonl"
+    logger = AuditLogger(log)
+    logger.write("event_a", value=1)
+    logger.write("event_b", value=2)
+
+    lines = log.read_text(encoding="utf-8").splitlines()
+    # Flip a value in the first record without recomputing its hash.
+    lines[0] = lines[0].replace('"value": 1', '"value": 999')
+    log.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    report = verify_chain(log)
+    assert not report["ok"]
+    assert report["line"] == 1
+
+
+def test_deletion_is_detected(tmp_path: Path) -> None:
+    log = tmp_path / "audit.jsonl"
+    logger = AuditLogger(log)
+    logger.write("a", value=1)
+    logger.write("b", value=2)
+    logger.write("c", value=3)
+
+    lines = log.read_text(encoding="utf-8").splitlines()
+    del lines[1]  # remove the middle record
+    log.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    report = verify_chain(log)
+    assert not report["ok"]
