@@ -17,7 +17,13 @@ namespace TeklaWorkstationHost
         {
             // Shared HMAC secret; MUST match the orchestrator's APPROVAL_SECRET.
             var secret = Environment.GetEnvironmentVariable("TEKLA_AGENT_APPROVAL_SECRET");
-            var verifier = new ApprovalVerifier(secret);
+            // This host's identity. The token is bound to a workstation_url; the host
+            // rejects tokens minted for a different one, so when several hosts share
+            // the secret a token leaked from host A cannot be replayed against host B.
+            // Defaults to the orchestrator's default target for single-host setups.
+            var workstationUrl = Environment.GetEnvironmentVariable("TEKLA_AGENT_WORKSTATION_URL")
+                ?? "http://127.0.0.1:51234";
+            var verifier = new ApprovalVerifier(secret, workstationUrl);
             if (!verifier.Enabled)
             {
                 var why = verifier.DisabledReason == "host_secret_weak_or_default"
@@ -266,14 +272,16 @@ namespace TeklaWorkstationHost
         };
 
         private readonly byte[] _secret;
+        private readonly string _workstationUrl;
         private readonly object _lock = new object();
         private readonly HashSet<string> _seenNonces = new HashSet<string>(StringComparer.Ordinal);
         private readonly string _noncePath;
 
         public string DisabledReason { get; private set; }
 
-        public ApprovalVerifier(string secret)
+        public ApprovalVerifier(string secret, string workstationUrl = "")
         {
+            _workstationUrl = workstationUrl ?? string.Empty;
             if (string.IsNullOrEmpty(secret))
             {
                 _secret = null;
@@ -406,6 +414,17 @@ namespace TeklaWorkstationHost
             if (string.IsNullOrEmpty(boundHash) || !FixedTimeEquals(boundHash, requestBodySha256))
             {
                 return ApprovalCheck.Fail("args_mismatch");
+            }
+
+            // Workstation binding: reject a token minted for a different host. With
+            // several hosts sharing the secret, this stops a token leaked from host
+            // A being posted directly to host B (which the orchestrator's own URL
+            // check cannot see). Enforced whenever the token carries the claim.
+            var boundUrl = claims.Value<string>("workstation_url");
+            if (!string.IsNullOrEmpty(boundUrl)
+                && !string.Equals(boundUrl, _workstationUrl, StringComparison.OrdinalIgnoreCase))
+            {
+                return ApprovalCheck.Fail("workstation_mismatch");
             }
 
             // Single-use: burn the nonce so the token cannot be replayed against
