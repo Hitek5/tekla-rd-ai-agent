@@ -61,6 +61,10 @@ class ApprovalClaims:
     nonce: str
     issued_at: int
     expires_at: int
+    # SHA-256 of the exact canonical request body the host will receive. Lets the
+    # C# host bind the token to the arguments by hashing the raw bytes it gets,
+    # with no cross-language JSON re-serialisation.
+    body_sha256: str = ""
 
     def to_payload(self) -> dict[str, Any]:
         return {
@@ -72,6 +76,7 @@ class ApprovalClaims:
             "nonce": self.nonce,
             "iat": self.issued_at,
             "exp": self.expires_at,
+            "body_sha256": self.body_sha256,
         }
 
 
@@ -177,6 +182,7 @@ class ApprovalSigner:
         approver: str,
         nonce: str,
         ttl_seconds: int | None = None,
+        body_sha256: str = "",
     ) -> str:
         now = int(self._clock())
         ttl = ttl_seconds if ttl_seconds is not None else self._default_ttl
@@ -189,6 +195,7 @@ class ApprovalSigner:
             nonce=nonce,
             issued_at=now,
             expires_at=now + ttl,
+            body_sha256=body_sha256,
         )
         payload_bytes = json.dumps(
             claims.to_payload(), ensure_ascii=False, sort_keys=True
@@ -217,6 +224,7 @@ class ApprovalSigner:
                 nonce=str(data["nonce"]),
                 issued_at=int(data["iat"]),
                 expires_at=int(data["exp"]),
+                body_sha256=str(data.get("body_sha256", "")),
             )
         except (KeyError, ValueError, TypeError):
             return None

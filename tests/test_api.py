@@ -131,6 +131,39 @@ def test_mint_and_inspect_approval() -> None:
     assert body["bound_to"]["tool"] == "CreateBeam"
 
 
+def test_approval_token_binds_body_sha256() -> None:
+    # The token must carry the SHA-256 of the canonical wire body, so the C# host
+    # can bind the approval to the actual request arguments.
+    import base64
+    import hashlib
+    import json as _json
+
+    from tekla_agent.tools import canonical_json, to_wire_args, validate_args
+
+    args = {
+        "start": {"x": 0, "y": 0, "z": 0},
+        "end": {"x": 6000, "y": 0, "z": 0},
+        "profile": "HEA300",
+        "material": "S355",
+    }
+    resp = client.post(
+        "/approvals",
+        headers={"X-Approver-Key": "test-approver-key"},
+        json={"tool": "CreateBeam", "args": args, "user": "ivan",
+              "project_id": "P1", "approver": "lead"},
+    )
+    assert resp.status_code == 200
+    payload_b64 = resp.json()["approval_token"].split(".")[0]
+    payload = _json.loads(
+        base64.urlsafe_b64decode(payload_b64 + "=" * (-len(payload_b64) % 4))
+    )
+    _ok, _r, norm = validate_args("CreateBeam", args)
+    expected = hashlib.sha256(
+        canonical_json(to_wire_args("CreateBeam", norm)).encode("utf-8")
+    ).hexdigest()
+    assert payload["body_sha256"] == expected
+
+
 def test_mint_rejects_invalid_args() -> None:
     resp = client.post(
         "/approvals",

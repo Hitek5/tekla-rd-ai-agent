@@ -154,12 +154,34 @@ def main() -> None:
         "OLLAMA_CONTEXT_LENGTH": str(preset["ollama_num_ctx"]),
     }
     env_prefix = " ".join(f"{k}={v}" for k, v in extra_env.items())
-    create_cmd = f"ollama create {tag} -f {modelfile}"
-    command = f"{create_cmd} && {env_prefix} ollama serve"
+
+    # Ollama resolves a Modelfile `FROM ./file.gguf` relative to the Modelfile's
+    # own location, NOT --model-dir. To guarantee it imports the VERIFIED file, we
+    # generate a Modelfile whose FROM is the absolute path of the verified GGUF,
+    # copying every other directive from the bundled Modelfile.
+    verified_gguf = (args.model_dir / preset["gguf_file"]).resolve()
+    generated = args.model_dir / f"Modelfile.{tag}.generated"
+
+    def write_generated() -> Path:
+        kept = [
+            line
+            for line in modelfile.read_text(encoding="utf-8").splitlines()
+            if not line.strip().upper().startswith("FROM ")
+        ]
+        generated.write_text(
+            f"FROM {verified_gguf}\n" + "\n".join(kept) + "\n", encoding="utf-8"
+        )
+        return generated
+
+    command = (
+        f"ollama create {tag} -f {generated} (FROM {verified_gguf}) "
+        f"&& {env_prefix} ollama serve"
+    )
 
     if args.run:
-        print(f"[run] {create_cmd}", file=sys.stderr)
-        rc = subprocess.call(["ollama", "create", tag, "-f", str(modelfile)])
+        path = write_generated()
+        print(f"[run] ollama create {tag} -f {path}", file=sys.stderr)
+        rc = subprocess.call(["ollama", "create", tag, "-f", str(path)])
         if rc != 0:
             raise SystemExit(rc)
         print(f"[run] {env_prefix} ollama serve", file=sys.stderr)

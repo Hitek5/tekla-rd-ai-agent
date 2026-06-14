@@ -107,10 +107,14 @@ namespace TeklaWorkstationHost
                     return;
                 }
 
+                // Read the body BEFORE verifying so the approval can be bound to
+                // the actual request arguments (body_sha256), not just the tool.
+                var body = await ReadBodyAsync(context.Request).ConfigureAwait(false);
+
                 if (MutatingTools.Contains(tool))
                 {
                     var token = context.Request.Headers["X-Agent-Approval"];
-                    var check = _verifier.Verify(token, tool);
+                    var check = _verifier.Verify(token, tool, Sha256Hex(body));
                     if (!check.Ok)
                     {
                         Audit(tool, false, "blocked_approval:" + check.Reason);
@@ -123,7 +127,6 @@ namespace TeklaWorkstationHost
                     }
                 }
 
-                var body = await ReadBodyAsync(context.Request).ConfigureAwait(false);
                 var result = Dispatch(tool, body);
                 Audit(tool, result.Success, result.Message);
                 await WriteJsonAsync(context, result.Success ? 200 : 500, result).ConfigureAwait(false);
@@ -169,6 +172,20 @@ namespace TeklaWorkstationHost
             using (var reader = new StreamReader(request.InputStream, request.ContentEncoding))
             {
                 return await reader.ReadToEndAsync().ConfigureAwait(false);
+            }
+        }
+
+        private static string Sha256Hex(string body)
+        {
+            using (var sha = SHA256.Create())
+            {
+                var hash = sha.ComputeHash(Encoding.UTF8.GetBytes(body ?? string.Empty));
+                var sb = new StringBuilder(hash.Length * 2);
+                foreach (var b in hash)
+                {
+                    sb.Append(b.ToString("x2"));
+                }
+                return sb.ToString();
             }
         }
 
@@ -281,7 +298,7 @@ namespace TeklaWorkstationHost
             }
         }
 
-        public ApprovalCheck Verify(string token, string expectedTool)
+        public ApprovalCheck Verify(string token, string expectedTool, string requestBodySha256)
         {
             if (!Enabled)
             {
@@ -341,10 +358,20 @@ namespace TeklaWorkstationHost
                 return ApprovalCheck.Fail("tool_mismatch");
             }
 
+            // Argument binding: the orchestrator sends the exact canonical body
+            // the token was minted for, and signs its SHA-256 into body_sha256.
+            // We hash the raw bytes we received and compare — so a token approved
+            // for one CreateBeam cannot be reused with different arguments, even
+            // on a direct call that bypasses the orchestrator. No cross-language
+            // JSON re-serialisation is involved.
+            var boundHash = claims.Value<string>("body_sha256");
+            if (string.IsNullOrEmpty(boundHash) || !FixedTimeEquals(boundHash, requestBodySha256))
+            {
+                return ApprovalCheck.Fail("args_mismatch");
+            }
+
             // Single-use: burn the nonce so the token cannot be replayed against
-            // the host. Argument binding (args_hash) stays authoritative at the
-            // orchestrator — recomputing the canonical args hash across Python and
-            // .NET is brittle, so we do not duplicate it here.
+            // the host.
             var nonce = claims.Value<string>("nonce");
             if (string.IsNullOrEmpty(nonce))
             {

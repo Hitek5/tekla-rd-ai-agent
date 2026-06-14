@@ -24,14 +24,19 @@
 | Substituted model weights | SHA-256 verification against `manifest.json` before serving | `serve_model.py` |
 | Abuse / DoS | Request-size cap + per-client rate limit | `main.py` middleware |
 
-The approval token splits duties: the **orchestrator** is authoritative for
-argument binding and single-use (replay) protection; the **C# workstation host**
-independently re-verifies the signature, expiry and target tool with the shared
-secret, **and keeps its own single-use nonce ledger**, so a token replayed
-directly against the host (a bypass around the orchestrator) is rejected after
-one use. Argument binding is not re-checked on the host because recomputing the
-canonical args hash identically across Python and .NET is brittle; the
-orchestrator remains authoritative for it.
+Defense-in-depth: the **C# workstation host** independently re-verifies every
+mutating call, even if the orchestrator is bypassed (e.g. a direct call to
+`127.0.0.1`). It checks, with the shared secret:
+
+- **signature, expiry and target tool** of the token;
+- **argument binding** — the orchestrator sends the *exact canonical body* the
+  token was minted for and signs its SHA-256 into the token's `body_sha256`
+  claim; the host hashes the **raw request bytes** and compares. Because the host
+  never re-serialises the JSON, there is no cross-language (`0.0` vs `0`, key
+  order, whitespace) ambiguity — a token for one `CreateBeam` cannot be reused
+  with different arguments;
+- **single use** — the host keeps its own nonce ledger and burns the nonce on
+  first use, so a token replayed directly against the host is rejected.
 
 ## Approval levels
 

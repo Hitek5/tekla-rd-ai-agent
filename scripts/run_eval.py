@@ -46,12 +46,15 @@ def evaluate_task(base_url: str, task: dict[str, Any], headers: dict[str, str]) 
             response={"status_code": response.status_code, "text": response.text[:1000]},
         )
 
+    # Each task supplies schema-valid args per tool (tools with no args use {});
+    # placeholder args would now be rejected by the orchestrator's arg validation.
+    tool_args = task.get("tool_args", {})
     for tool in task.get("expected_tools", []):
         tool_response = httpx.post(
             f"{base_url}/tool-calls",
             json={
                 "tool": tool,
-                "args": {"eval_prompt": prompt},
+                "args": tool_args.get(tool, {}),
                 "user": "eval",
                 "project_id": task["id"],
                 "dry_run": True,

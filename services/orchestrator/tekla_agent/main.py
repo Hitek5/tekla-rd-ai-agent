@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import secrets
 import time
 from collections import deque
@@ -16,7 +17,13 @@ from tekla_agent.config import settings
 from tekla_agent.llm import LLMError, OpenAICompatibleClient
 from tekla_agent.policy import ToolPolicy
 from tekla_agent.rag import LocalJsonlRetriever
-from tekla_agent.tools import extract_tool_call, known_tools, to_wire_args, validate_args
+from tekla_agent.tools import (
+    canonical_json,
+    extract_tool_call,
+    known_tools,
+    to_wire_args,
+    validate_args,
+)
 
 app = FastAPI(title="Tekla/RD Local AI Agent Orchestrator", version="0.2.0")
 
@@ -34,6 +41,12 @@ llm = OpenAICompatibleClient(
     model=settings.llm_model,
     timeout_seconds=settings.llm_timeout_seconds,
 )
+
+
+def _canonical_body(tool: str, args: dict[str, Any]) -> tuple[str, str]:
+    """Return (canonical_body, sha256_hex) for the wire args sent to the host."""
+    body = canonical_json(to_wire_args(tool, args))
+    return body, hashlib.sha256(body.encode("utf-8")).hexdigest()
 
 
 # --------------------------------------------------------------------------
@@ -472,6 +485,10 @@ async def mint_approval(request: MintApprovalRequest) -> MintApprovalResponse:
         raise HTTPException(status_code=400, detail=f"Cannot approve invalid args: {args_reason}")
     args_for_token = normalised if normalised is not None else request.args
 
+    # Bind the token to the exact canonical body the host will receive, so the
+    # host can enforce argument binding by hashing the raw request bytes.
+    _body, body_sha = _canonical_body(request.tool, args_for_token)
+
     nonce = secrets.token_urlsafe(16)
     ttl = request.ttl_seconds or settings.approval_ttl_seconds
     token = approvals.mint(
@@ -482,6 +499,7 @@ async def mint_approval(request: MintApprovalRequest) -> MintApprovalResponse:
         approver=request.approver,
         nonce=nonce,
         ttl_seconds=ttl,
+        body_sha256=body_sha,
     )
     audit.write(
         "approval_minted",
@@ -614,15 +632,17 @@ async def tool_call(request: ToolCallRequest) -> ToolCallResponse:
                 dry_run=False,
             )
 
-    # Forward the approval token so the workstation host can re-verify it.
-    headers = {}
+    # Send the EXACT canonical bytes the token is bound to, so the host can verify
+    # body_sha256 by hashing the raw request body (no re-serialisation).
+    body = _canonical_body(request.tool, args_for_call)[0]
+    headers = {"Content-Type": "application/json"}
     if request.approval_token:
         headers["X-Agent-Approval"] = request.approval_token
 
     async with httpx.AsyncClient(timeout=30.0) as client:
         response = await client.post(
             f"{request.workstation_url.rstrip('/')}/tools/{request.tool}",
-            json=to_wire_args(request.tool, args_for_call),
+            content=body.encode("utf-8"),
             headers=headers,
         )
 

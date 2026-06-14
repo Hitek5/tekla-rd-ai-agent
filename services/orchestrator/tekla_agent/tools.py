@@ -142,6 +142,17 @@ def validate_args(tool: str, args: dict[str, Any]) -> tuple[bool, str, dict[str,
     return True, "ok", model.model_dump(exclude_none=True)
 
 
+def canonical_json(obj: Any) -> str:
+    """Deterministic JSON string: sorted keys, no whitespace, UTF-8.
+
+    The orchestrator sends EXACTLY these bytes as the request body to the C# host
+    and binds the approval token to their SHA-256, so the host can verify the
+    argument binding by hashing the raw bytes it receives — no re-serialisation,
+    no cross-language number/whitespace ambiguity.
+    """
+    return json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+
 def to_wire_args(tool: str, args: dict[str, Any]) -> dict[str, Any]:
     """Serialise validated args to the C# host wire names (PascalCase).
 
