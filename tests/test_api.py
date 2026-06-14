@@ -306,9 +306,10 @@ def test_indeterminate_send_consumes_token(monkeypatch) -> None:
     assert r2.json()["allowed"] is False
 
 
-def test_host_error_does_not_reopen_token(monkeypatch) -> None:
-    # A >=400 from the host (post-verify dispatch failure) means the host burned
-    # its nonce; the orchestrator must commit, not reopen.
+def test_host_error_keeps_token_retryable(monkeypatch) -> None:
+    # The host reserves then commits its nonce ONLY on success; a >=400 means it
+    # did not spend the nonce, so the orchestrator rolls back and the approval
+    # stays retryable.
     from tekla_agent import main as main_mod
 
     beam_args, token = _mint_beam_token()
@@ -329,10 +330,10 @@ def test_host_error_does_not_reopen_token(monkeypatch) -> None:
     r1 = client.post("/tool-calls", headers=AUTH, json=payload)
     assert r1.status_code == 502  # surfaced host failure
 
-    # Token spent (host may have acted) — not reopened for replay.
+    # Token NOT spent (host rejected/failed) — retry against a working host works.
     monkeypatch.setattr(main_mod.httpx, "AsyncClient", _CapturingClient)
     r2 = client.post("/tool-calls", headers=AUTH, json=payload)
-    assert r2.json()["allowed"] is False
+    assert r2.json()["allowed"] is True
 
 
 def test_token_cannot_be_used_twice(monkeypatch) -> None:

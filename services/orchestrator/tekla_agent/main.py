@@ -767,11 +767,16 @@ async def tool_call(request: ToolCallRequest) -> ToolCallResponse:
     except ValueError:
         result = {"raw": response.text}
 
-    # The host responded, so it saw the token (and burned its own nonce if the
-    # approval verified). Commit on the orchestrator too — never reopen a token the
-    # host may have acted on, even on a >=400 (e.g. a post-verify dispatch failure).
+    # The host commits its own nonce only on a SUCCESSFUL execution (it reserves
+    # then commits/rolls back). Mirror that: commit on <400 (host executed and
+    # spent the nonce), roll back on >=400 (an approval/route/dispatch rejection
+    # where the host did NOT spend it) so the approval stays retryable. workstation
+    # binding still prevents a rolled-back token from being used on another host.
     if decision.requires_approval:
-        approvals.commit(request.approval_token)
+        if response.status_code < 400:
+            approvals.commit(request.approval_token)
+        else:
+            approvals.rollback(request.approval_token)
 
     audit.write(
         "tool_call_completed",

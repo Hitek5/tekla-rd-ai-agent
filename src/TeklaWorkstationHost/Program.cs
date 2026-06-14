@@ -37,7 +37,12 @@ namespace TeklaWorkstationHost
             }
 
             var host = new LocalToolHost(new StubTeklaFacade(), verifier);
-            host.RunAsync("http://127.0.0.1:51234/").GetAwaiter().GetResult();
+            // Listen on the configured workstation URL so the bind address matches
+            // the identity tokens are bound to (HttpListener prefixes need a
+            // trailing slash). For a non-loopback prefix on Windows the operator
+            // must grant a urlacl (netsh http add urlacl).
+            var prefix = workstationUrl.EndsWith("/") ? workstationUrl : workstationUrl + "/";
+            host.RunAsync(prefix).GetAwaiter().GetResult();
         }
     }
 
@@ -51,6 +56,15 @@ namespace TeklaWorkstationHost
             "ModifyObject",
             "DeleteObject",
             "GenerateDrawingDraft"
+        };
+
+        // Mutating tools the StubTeklaFacade actually dispatches. Others are rejected
+        // with 501 before the approval nonce is touched (see HandleAsync), until the
+        // real Tekla facade implements them.
+        private static readonly HashSet<string> ImplementedMutatingTools = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "CreateBeam",
+            "CreateColumn"
         };
 
         private static readonly HashSet<string> AllowedTools = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
@@ -127,6 +141,18 @@ namespace TeklaWorkstationHost
 
                 if (MutatingTools.Contains(tool))
                 {
+                    // Reject not-yet-implemented mutating tools BEFORE touching the
+                    // approval, so a one-time token is never consumed on a guaranteed
+                    // no-op.
+                    if (!ImplementedMutatingTools.Contains(tool))
+                    {
+                        Audit(tool, false, "not_implemented");
+                        await WriteJsonAsync(
+                            context, 501, new { error = "Tool not implemented", tool }
+                        ).ConfigureAwait(false);
+                        return;
+                    }
+
                     var token = context.Request.Headers["X-Agent-Approval"];
                     var check = _verifier.Verify(token, tool, Sha256Hex(bodyBytes));
                     if (!check.Ok)
@@ -139,6 +165,31 @@ namespace TeklaWorkstationHost
                         ).ConfigureAwait(false);
                         return;
                     }
+
+                    // The nonce is reserved; commit it only on a successful execution,
+                    // roll back otherwise (including a dispatch exception) so the
+                    // approval is not wasted on a failure.
+                    ToolResult mResult;
+                    try
+                    {
+                        mResult = Dispatch(tool, body);
+                    }
+                    catch
+                    {
+                        _verifier.RollbackNonce(check.Nonce);
+                        throw;
+                    }
+                    if (mResult.Success)
+                    {
+                        _verifier.CommitNonce(check.Nonce);
+                    }
+                    else
+                    {
+                        _verifier.RollbackNonce(check.Nonce);
+                    }
+                    Audit(tool, mResult.Success, mResult.Message);
+                    await WriteJsonAsync(context, mResult.Success ? 200 : 500, mResult).ConfigureAwait(false);
+                    return;
                 }
 
                 var result = Dispatch(tool, body);
@@ -215,6 +266,8 @@ namespace TeklaWorkstationHost
             context.Response.OutputStream.Close();
         }
 
+        private static readonly object _auditLock = new object();
+
         private static void Audit(string tool, bool success, string message)
         {
             var dir = Path.Combine(
@@ -229,7 +282,12 @@ namespace TeklaWorkstationHost
                 success,
                 message
             });
-            File.AppendAllText(Path.Combine(dir, "mcp-audit.jsonl"), line + Environment.NewLine, Encoding.UTF8);
+            // Handlers run on concurrent Tasks; serialize the append so two writers
+            // cannot hit a file-sharing violation (mirrors the nonce ledger lock).
+            lock (_auditLock)
+            {
+                File.AppendAllText(Path.Combine(dir, "mcp-audit.jsonl"), line + Environment.NewLine, Encoding.UTF8);
+            }
         }
     }
 
@@ -237,15 +295,16 @@ namespace TeklaWorkstationHost
     {
         public bool Ok;
         public string Reason;
+        public string Nonce;
 
         public static ApprovalCheck Fail(string reason)
         {
             return new ApprovalCheck { Ok = false, Reason = reason };
         }
 
-        public static ApprovalCheck Pass(string reason)
+        public static ApprovalCheck Pass(string reason, string nonce)
         {
-            return new ApprovalCheck { Ok = true, Reason = reason };
+            return new ApprovalCheck { Ok = true, Reason = reason, Nonce = nonce };
         }
     }
 
@@ -275,6 +334,7 @@ namespace TeklaWorkstationHost
         private readonly string _workstationUrl;
         private readonly object _lock = new object();
         private readonly HashSet<string> _seenNonces = new HashSet<string>(StringComparer.Ordinal);
+        private readonly HashSet<string> _reservedNonces = new HashSet<string>(StringComparer.Ordinal);
         private readonly string _noncePath;
 
         public string DisabledReason { get; private set; }
@@ -326,21 +386,44 @@ namespace TeklaWorkstationHost
             get { return _secret != null; }
         }
 
-        // Host-side single-use ledger: burns a nonce the first time the host sees
-        // it and persists it, so a token replayed directly against the host (a
-        // bypass around the orchestrator) is rejected after its one use. Returns
-        // false if the nonce was already spent.
-        private bool BurnNonce(string nonce)
+        // Host-side single-use ledger with reserve/commit/rollback (mirrors the
+        // orchestrator). The nonce is RESERVED at verification and only COMMITTED
+        // (persisted as spent) after the tool actually executes successfully, so a
+        // failed/unimplemented dispatch does not waste the one-time approval. A
+        // concurrent duplicate that hits the host directly is still blocked because
+        // reserve is atomic. Returns false if already reserved or spent.
+        public bool ReserveNonce(string nonce)
         {
             lock (_lock)
             {
-                if (_seenNonces.Contains(nonce))
+                if (_seenNonces.Contains(nonce) || _reservedNonces.Contains(nonce))
                 {
                     return false;
                 }
+                _reservedNonces.Add(nonce);
+                return true;
+            }
+        }
+
+        public void CommitNonce(string nonce)
+        {
+            lock (_lock)
+            {
+                _reservedNonces.Remove(nonce);
+                if (_seenNonces.Contains(nonce))
+                {
+                    return;
+                }
                 _seenNonces.Add(nonce);
                 File.AppendAllText(_noncePath, nonce + Environment.NewLine, Encoding.UTF8);
-                return true;
+            }
+        }
+
+        public void RollbackNonce(string nonce)
+        {
+            lock (_lock)
+            {
+                _reservedNonces.Remove(nonce);
             }
         }
 
@@ -428,19 +511,20 @@ namespace TeklaWorkstationHost
                 return ApprovalCheck.Fail("workstation_mismatch");
             }
 
-            // Single-use: burn the nonce so the token cannot be replayed against
-            // the host.
+            // Single-use: RESERVE the nonce (atomic; blocks concurrent duplicates
+            // and direct-to-host replays). The caller commits it only after the
+            // tool executes successfully, or rolls back on failure.
             var nonce = claims.Value<string>("nonce");
             if (string.IsNullOrEmpty(nonce))
             {
                 return ApprovalCheck.Fail("missing_nonce");
             }
-            if (!BurnNonce(nonce))
+            if (!ReserveNonce(nonce))
             {
                 return ApprovalCheck.Fail("already_used");
             }
 
-            return ApprovalCheck.Pass("approved");
+            return ApprovalCheck.Pass("approved", nonce);
         }
 
         private static byte[] Base64UrlDecode(string input)

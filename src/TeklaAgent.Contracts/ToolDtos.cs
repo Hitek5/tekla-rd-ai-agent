@@ -53,6 +53,22 @@ namespace TeklaAgent.Contracts
         public string Guid { get; set; }
     }
 
+    // Contract types for mutating tools that are whitelisted but not yet dispatched
+    // by the starter host (rejected with 501 until the facade implements them).
+    public sealed class CreateRebarRequest
+    {
+        public string HostGuid { get; set; }
+        public double DiameterMm { get; set; }
+        public string Grade { get; set; }
+        public double SpacingMm { get; set; }
+    }
+
+    public sealed class GenerateDrawingDraftRequest
+    {
+        public IList<string> ObjectGuids { get; set; }
+        public string Template { get; set; }
+    }
+
     public sealed class ToolResult
     {
         public bool Success { get; set; }
