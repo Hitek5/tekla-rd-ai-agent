@@ -1,8 +1,26 @@
+"""Tool and prompt policy layer.
+
+Separation of duties:
+
+* **policy** decides *whether a tool may run and whether it needs approval*,
+  based on the declarative whitelist in ``configs/tools-policy.yaml``;
+* **approval** (see :mod:`tekla_agent.approval`) decides *whether a presented
+  approval token is cryptographically valid* for this exact call.
+
+So ``check_tool_call`` takes an already-verified boolean ``approval_verified``
+rather than a raw string. This keeps the trust boundary explicit: a token that
+is merely *present* never counts as approval — it must have been verified.
+"""
+
+from __future__ import annotations
+
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import yaml
+
+from tekla_agent.screening import compile_patterns, first_match
 
 
 @dataclass(frozen=True)
@@ -21,19 +39,19 @@ class ToolPolicy:
             data = yaml.safe_load(handle) or {}
         self.defaults: dict[str, Any] = data.get("defaults", {})
         self.tools: dict[str, dict[str, Any]] = data.get("tools", {})
-        self.blocked_patterns = [str(item).lower() for item in data.get("blocked_patterns", [])]
+        raw_patterns = [str(item) for item in data.get("blocked_patterns", [])]
+        self._compiled_patterns = compile_patterns(raw_patterns)
 
     def check_prompt(self, prompt: str) -> ToolDecision:
-        normalized = prompt.lower()
-        for pattern in self.blocked_patterns:
-            if pattern in normalized:
-                return ToolDecision(
-                    allowed=False,
-                    decision="blocked_prompt_pattern",
-                    reason=f"Prompt contains blocked pattern: {pattern}",
-                    requires_approval=False,
-                    mutates_model=False,
-                )
+        matched = first_match(prompt, self._compiled_patterns)
+        if matched is not None:
+            return ToolDecision(
+                allowed=False,
+                decision="blocked_prompt_pattern",
+                reason=f"Prompt contains blocked pattern: {matched}",
+                requires_approval=False,
+                mutates_model=False,
+            )
         return ToolDecision(
             allowed=True,
             decision="prompt_allowed",
@@ -42,12 +60,15 @@ class ToolPolicy:
             mutates_model=False,
         )
 
+    def describe_tool(self, tool: str) -> dict[str, Any] | None:
+        return self.tools.get(tool)
+
     def check_tool_call(
         self,
         tool: str,
         *,
         dry_run: bool,
-        approval_token: str | None,
+        approval_verified: bool,
         production_model: bool,
     ) -> ToolDecision:
         config = self.tools.get(tool)
@@ -82,11 +103,11 @@ class ToolPolicy:
                 mutates_model=mutates_model,
             )
 
-        if requires_approval and not approval_token:
+        if requires_approval and not approval_verified:
             return ToolDecision(
                 allowed=False,
                 decision="blocked_requires_approval",
-                reason="Tool requires approval token",
+                reason="Tool requires a valid, scoped approval token",
                 requires_approval=True,
                 mutates_model=mutates_model,
             )
@@ -98,4 +119,3 @@ class ToolPolicy:
             requires_approval=requires_approval,
             mutates_model=mutates_model,
         )
-

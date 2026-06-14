@@ -1,8 +1,10 @@
 {
+  "_comment": "Copy to manifest.json and fill sha256 after downloading each GGUF. serve_model.py refuses to launch a model whose file hash does not match its entry here. The gguf_file must match configs/models.yaml serving_presets.*.gguf_file.",
   "models": [
     {
       "name": "Qwen2.5-Coder-7B-Instruct",
-      "source": "https://huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct",
+      "gguf_file": "qwen2.5-coder-7b-instruct-q4_k_m.gguf",
+      "source": "https://huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct-GGUF",
       "format": "GGUF",
       "quantization": "Q4_K_M",
       "intended_hardware": "12GB VRAM",
@@ -10,7 +12,28 @@
       "sha256": "fill-after-download"
     },
     {
+      "name": "Qwen2.5-Coder-7B-Instruct",
+      "gguf_file": "qwen2.5-coder-7b-instruct-q5_k_m.gguf",
+      "source": "https://huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct-GGUF",
+      "format": "GGUF",
+      "quantization": "Q5_K_M",
+      "intended_hardware": "16GB VRAM",
+      "license_file": "licenses/qwen2.5-coder.txt",
+      "sha256": "fill-after-download"
+    },
+    {
+      "name": "Qwen2.5-Coder-14B-Instruct",
+      "gguf_file": "qwen2.5-coder-14b-instruct-q4_k_m.gguf",
+      "source": "https://huggingface.co/Qwen/Qwen2.5-Coder-14B-Instruct-GGUF",
+      "format": "GGUF",
+      "quantization": "Q4_K_M",
+      "intended_hardware": "24GB VRAM",
+      "license_file": "licenses/qwen2.5-coder.txt",
+      "sha256": "fill-after-download"
+    },
+    {
       "name": "DeepSeek-Coder-V2-Lite-Instruct",
+      "gguf_file": "deepseek-coder-v2-lite-instruct-q4_k_m.gguf",
       "source": "https://github.com/deepseek-ai/DeepSeek-Coder-V2",
       "format": "GGUF",
       "quantization": "Q4_K_M",
@@ -20,4 +43,3 @@
     }
   ]
 }
-

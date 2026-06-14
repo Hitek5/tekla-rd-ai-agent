@@ -65,10 +65,27 @@ tools:
     requires_approval: true
     allowed_in_production: false
 
+# Patterns are matched after Unicode normalisation (NFKC), confusable folding
+# (Cyrillic homoglyphs -> Latin) and zero-width stripping. List intent in BOTH
+# English and Russian, since the corpus and users are Russian-speaking.
 blocked_patterns:
+  # English
   - "execute arbitrary c#"
   - "run powershell from prompt"
   - "release rd without approval"
   - "delete all"
   - "disable audit"
+  - "ignore previous instructions"
+  - "ignore all previous"
+  - "bypass approval"
+  # Russian
+  - "выполни произвольный c#"
+  - "запусти powershell"
+  - "выпусти рд без согласования"
+  - "удали всё"
+  - "удали все"
+  - "отключи аудит"
+  - "игнорируй предыдущие инструкции"
+  - "игнорируй все инструкции"
+  - "обойди согласование"
 

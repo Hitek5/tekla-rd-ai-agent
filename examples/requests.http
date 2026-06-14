@@ -1,9 +1,15 @@
-### Health
-GET http://127.0.0.1:8080/health
+@base = http://127.0.0.1:8080
+# Set these to match your .env. With API_KEY empty, omit the Authorization header.
+@apiKey = test-api-key
+@approverKey = test-approver-key
 
-### Chat with RAG
-POST http://127.0.0.1:8080/chat
+### Health (open, no auth)
+GET {{base}}/health
+
+### Chat with RAG (cites retrieved sources)
+POST {{base}}/chat
 Content-Type: application/json
+Authorization: Bearer {{apiKey}}
 
 {
   "message": "Создай балку HEA300 между точками (0,0,0) и (6000,0,0). Что потребуется для безопасного выполнения?",
@@ -12,30 +18,21 @@ Content-Type: application/json
   "production_model": false
 }
 
-### Dry-run tool call
-POST http://127.0.0.1:8080/tool-calls
+### Agent plan — model PROPOSES a typed tool call, nothing executes
+POST {{base}}/agent/plan
 Content-Type: application/json
+Authorization: Bearer {{apiKey}}
 
 {
-  "tool": "CreateBeam",
-  "args": {
-    "start": {"x": 0, "y": 0, "z": 0},
-    "end": {"x": 6000, "y": 0, "z": 0},
-    "profile": "HEA300",
-    "material": "S355",
-    "class": "3",
-    "name": "AI_DRAFT_BEAM"
-  },
-  "workstation_url": "http://127.0.0.1:51234",
+  "message": "Создай балку HEA300 между точками (0,0,0) и (6000,0,0), материал S355.",
   "user": "pilot/user",
-  "project_id": "pilot-copy-001",
-  "dry_run": true,
-  "production_model": false
+  "project_id": "pilot-copy-001"
 }
 
-### Approved execution to workstation host
-POST http://127.0.0.1:8080/tool-calls
+### Dry-run tool call (validates args + policy, never touches Tekla)
+POST {{base}}/tool-calls
 Content-Type: application/json
+Authorization: Bearer {{apiKey}}
 
 {
   "tool": "CreateBeam",
@@ -44,14 +41,57 @@ Content-Type: application/json
     "end": {"x": 6000, "y": 0, "z": 0},
     "profile": "HEA300",
     "material": "S355",
-    "class": "3",
+    "class_": "3",
+    "name": "AI_DRAFT_BEAM"
+  },
+  "user": "pilot/user",
+  "project_id": "pilot-copy-001",
+  "dry_run": true
+}
+
+### Step 1 of execution: approver mints a scoped, single-use token
+# args MUST be identical to the tool-call below — the token is bound to them.
+POST {{base}}/approvals
+Content-Type: application/json
+X-Approver-Key: {{approverKey}}
+
+{
+  "tool": "CreateBeam",
+  "args": {
+    "start": {"x": 0, "y": 0, "z": 0},
+    "end": {"x": 6000, "y": 0, "z": 0},
+    "profile": "HEA300",
+    "material": "S355",
+    "class_": "3",
+    "name": "AI_DRAFT_BEAM"
+  },
+  "user": "pilot/user",
+  "project_id": "pilot-copy-001",
+  "approver": "lead-engineer"
+}
+
+### Step 2: execute with the minted token (paste approval_token from step 1)
+POST {{base}}/tool-calls
+Content-Type: application/json
+Authorization: Bearer {{apiKey}}
+
+{
+  "tool": "CreateBeam",
+  "args": {
+    "start": {"x": 0, "y": 0, "z": 0},
+    "end": {"x": 6000, "y": 0, "z": 0},
+    "profile": "HEA300",
+    "material": "S355",
+    "class_": "3",
     "name": "AI_DRAFT_BEAM"
   },
   "workstation_url": "http://127.0.0.1:51234",
   "user": "pilot/user",
   "project_id": "pilot-copy-001",
   "dry_run": false,
-  "production_model": false,
-  "approval_token": "approved-by-engineer-ticket-001"
+  "approval_token": "PASTE_TOKEN_FROM_STEP_1"
 }
 
+### Verify the tamper-evident audit chain (for ИБ review)
+GET {{base}}/audit/verify
+Authorization: Bearer {{apiKey}}

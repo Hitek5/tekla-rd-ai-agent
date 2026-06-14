@@ -54,3 +54,77 @@ runtime_defaults:
     - llama.cpp or Ollama for fast GGUF MVP
     - vLLM or SGLang for higher throughput after GPU validation
 
+# ---------------------------------------------------------------------------
+# Runnable serving presets.
+#
+# The sections above describe *what* to run; these describe *how*, with concrete,
+# VRAM-budgeted parameters that scripts/serve_model.py can execute. Each preset
+# is sized so the model weights + KV cache fit the tier with headroom for the
+# OS/compositor. Key levers:
+#
+#   * gguf_quant      — weight quantisation (Q4_K_M is the quality/size sweet spot)
+#   * context_length  — KV cache grows linearly with this; the dominant VRAM cost
+#                        after weights, so it is the first thing to cut on 12 GB
+#   * gpu_layers      — llama.cpp -ngl; 999 = offload all layers to GPU
+#   * kv_cache_type   — q8_0 KV cache ~halves cache VRAM for negligible quality loss,
+#                        which is what lets a 7B model keep a usable context on 12 GB
+#   * parallel        — concurrent sequences; >1 multiplies KV cache, keep at 1 on 12 GB
+# ---------------------------------------------------------------------------
+serving_presets:
+  # Conservative default for a single 12 GB card (RTX A2000 / 4070).
+  vram_12gb:
+    model: Qwen2.5-Coder-7B-Instruct
+    gguf_quant: Q4_K_M
+    gguf_file: qwen2.5-coder-7b-instruct-q4_k_m.gguf
+    context_length: 8192
+    gpu_layers: 999
+    kv_cache_type: q8_0
+    parallel: 1
+    llama_cpp: >-
+      llama-server -m {model_dir}/{gguf_file} -ngl {gpu_layers}
+      -c {context_length} -ctk {kv_cache_type} -ctv {kv_cache_type}
+      --host 127.0.0.1 --port 8000 --parallel {parallel} --api-key {api_key}
+    ollama_num_ctx: 8192
+    ollama_modelfile: deploy/ollama/Modelfile.qwen-coder-7b-12gb
+    ollama_tag: tekla-coder-7b
+
+  # 16 GB (RTX 5070 Ti): longer context, or step up to 14B at Q4.
+  vram_16gb:
+    model: Qwen2.5-Coder-7B-Instruct
+    gguf_quant: Q5_K_M
+    gguf_file: qwen2.5-coder-7b-instruct-q5_k_m.gguf
+    context_length: 16384
+    gpu_layers: 999
+    kv_cache_type: q8_0
+    parallel: 2
+    llama_cpp: >-
+      llama-server -m {model_dir}/{gguf_file} -ngl {gpu_layers}
+      -c {context_length} -ctk {kv_cache_type} -ctv {kv_cache_type}
+      --host 127.0.0.1 --port 8000 --parallel {parallel} --api-key {api_key}
+    ollama_num_ctx: 16384
+
+  # 24 GB (RTX 4090 / A5000 / 3090): 14B at Q4 with long context, headroom for
+  # a small embedding model alongside.
+  vram_24gb:
+    model: Qwen2.5-Coder-14B-Instruct
+    gguf_quant: Q4_K_M
+    gguf_file: qwen2.5-coder-14b-instruct-q4_k_m.gguf
+    context_length: 24576
+    gpu_layers: 999
+    kv_cache_type: q8_0
+    parallel: 2
+    llama_cpp: >-
+      llama-server -m {model_dir}/{gguf_file} -ngl {gpu_layers}
+      -c {context_length} -ctk {kv_cache_type} -ctv {kv_cache_type}
+      --host 127.0.0.1 --port 8000 --parallel {parallel} --api-key {api_key}
+    ollama_num_ctx: 24576
+    ollama_modelfile: deploy/ollama/Modelfile.qwen-coder-14b-24gb
+    ollama_tag: tekla-coder-14b
+
+# Maps detected VRAM (GB) to a preset. serve_model.py picks the largest preset
+# whose threshold is <= detected VRAM.
+vram_tier_thresholds:
+  - { min_gb: 22, preset: vram_24gb }
+  - { min_gb: 15, preset: vram_16gb }
+  - { min_gb: 10, preset: vram_12gb }
+

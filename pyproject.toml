@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tekla-rd-agent-mvp"
-version = "0.1.0"
+version = "0.2.0"
 description = "Local air-gapped AI agent MVP for Tekla/RD workflows"
 requires-python = ">=3.12,<3.14"
 dependencies = [
@@ -30,7 +30,7 @@ where = ["services/orchestrator"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["services/orchestrator"]
+pythonpath = ["services/orchestrator", "scripts"]
 
 [tool.ruff]
 line-length = 100
