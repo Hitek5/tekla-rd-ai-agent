@@ -682,9 +682,9 @@ async def tool_call(request: ToolCallRequest) -> ToolCallResponse:
     # Nonce lifecycle rule: only ROLL BACK (reopen for retry) when the request
     # provably never reached the host — a pre-send connection failure. For any
     # other outcome (an indeterminate timeout after sending, or ANY host response
-    # incl. >=400) the host may have verified and executed and burned its own
-    # nonce, so we COMMIT instead. Reopening then would let the single-use token be
-    # replayed to another host (the token is not bound to workstation_url).
+    # incl. >=400) the host may have verified, executed and burned its own nonce,
+    # so we COMMIT instead. (workstation_url binding additionally prevents a
+    # reopened token from ever being accepted by a different host.)
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(
