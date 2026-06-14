@@ -164,6 +164,26 @@ def test_approval_token_binds_body_sha256() -> None:
     assert payload["body_sha256"] == expected
 
 
+def test_approver_key_equal_to_api_key_rejected(monkeypatch) -> None:
+    # If the approver key is misconfigured to equal the API key, minting must be
+    # refused (otherwise any API client could self-approve).
+    from tekla_agent import main as main_mod
+
+    monkeypatch.setattr(main_mod.settings, "approver_api_key", "test-api-key")
+    resp = client.post(
+        "/approvals",
+        headers={"X-Approver-Key": "test-api-key"},
+        json={
+            "tool": "GetSelection",
+            "args": {},
+            "user": "ivan",
+            "project_id": "P1",
+            "approver": "lead",
+        },
+    )
+    assert resp.status_code == 503
+
+
 def test_mint_rejects_invalid_args() -> None:
     resp = client.post(
         "/approvals",

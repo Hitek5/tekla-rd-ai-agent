@@ -20,10 +20,13 @@ namespace TeklaWorkstationHost
             var verifier = new ApprovalVerifier(secret);
             if (!verifier.Enabled)
             {
+                var why = verifier.DisabledReason == "host_secret_weak_or_default"
+                    ? "TEKLA_AGENT_APPROVAL_SECRET is weak or a well-known default"
+                    : "TEKLA_AGENT_APPROVAL_SECRET is not set";
                 Console.WriteLine(
-                    "WARNING: TEKLA_AGENT_APPROVAL_SECRET not set. The host fails closed — " +
-                    "ALL mutating tool calls will be REJECTED until you set it to the same " +
-                    "value as the orchestrator's APPROVAL_SECRET. Read-only tools still work."
+                    "WARNING: " + why + ". The host fails closed — ALL mutating tool calls " +
+                    "will be REJECTED until you set a strong secret matching the orchestrator's " +
+                    "APPROVAL_SECRET. Read-only tools still work."
                 );
             }
 
@@ -243,24 +246,53 @@ namespace TeklaWorkstationHost
     /// <summary>
     /// Independently verifies the orchestrator's HMAC approval token on the
     /// workstation, using the same shared secret. This is defence in depth: even
-    /// if the orchestrator were compromised or bypassed, a mutating call still
-    /// needs a token whose signature, expiry and target tool check out here.
+    /// if the orchestrator were bypassed (a direct call to the host), a mutating
+    /// call still needs a token whose signature, expiry, target tool, argument
+    /// binding (body_sha256 of the raw request bytes) and single-use nonce all
+    /// check out here.
     ///
-    /// The orchestrator remains authoritative for argument binding and single-use
-    /// (replay) — the host deliberately does not recompute the args hash, because
-    /// canonical JSON across Python and .NET is brittle. Signature + expiry + tool
-    /// match is the high-value, low-risk subset to enforce locally.
+    /// The secret must be strong: a weak/well-known value is refused (verification
+    /// stays disabled, so mutating calls fail closed), mirroring the orchestrator.
     /// </summary>
     internal sealed class ApprovalVerifier
     {
+        private static readonly HashSet<string> WeakSecrets = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "change-me-please-set-a-32-char-secret",
+            "change-me",
+            "changeme",
+            "secret",
+            "local-dev-key",
+        };
+
         private readonly byte[] _secret;
         private readonly object _lock = new object();
         private readonly HashSet<string> _seenNonces = new HashSet<string>(StringComparer.Ordinal);
         private readonly string _noncePath;
 
+        public string DisabledReason { get; private set; }
+
         public ApprovalVerifier(string secret)
         {
-            _secret = string.IsNullOrEmpty(secret) ? null : Encoding.UTF8.GetBytes(secret);
+            if (string.IsNullOrEmpty(secret))
+            {
+                _secret = null;
+                DisabledReason = "host_secret_not_configured";
+            }
+            else if (secret.Length < 16
+                || WeakSecrets.Contains(secret)
+                || secret.StartsWith("change-me", StringComparison.OrdinalIgnoreCase))
+            {
+                // Refuse to verify with a weak/default secret — otherwise a local
+                // caller could forge tokens. Fail closed: leave verification off.
+                _secret = null;
+                DisabledReason = "host_secret_weak_or_default";
+            }
+            else
+            {
+                _secret = Encoding.UTF8.GetBytes(secret);
+                DisabledReason = null;
+            }
 
             var dir = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
@@ -308,10 +340,10 @@ namespace TeklaWorkstationHost
         {
             if (!Enabled)
             {
-                // Fail closed: without the shared secret we cannot verify any
+                // Fail closed: without a strong shared secret we cannot verify any
                 // approval, so a mutating call must be rejected rather than waved
-                // through. The operator must set TEKLA_AGENT_APPROVAL_SECRET.
-                return ApprovalCheck.Fail("host_secret_not_configured");
+                // through. The operator must set a strong TEKLA_AGENT_APPROVAL_SECRET.
+                return ApprovalCheck.Fail(DisabledReason ?? "host_secret_not_configured");
             }
             if (string.IsNullOrWhiteSpace(token))
             {

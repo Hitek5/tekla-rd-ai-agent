@@ -35,6 +35,18 @@ approvals = ApprovalSigner(
     NonceLedger(settings.approval_ledger_path),
     default_ttl_seconds=settings.approval_ttl_seconds,
 )
+
+# Fail closed at startup: the approver key gates human sign-off, so it must never
+# equal the regular API key — otherwise any API client could self-approve.
+if (
+    settings.api_key
+    and settings.approver_api_key
+    and secrets.compare_digest(settings.api_key, settings.approver_api_key)
+):
+    raise RuntimeError(
+        "APPROVER_API_KEY must differ from API_KEY (otherwise any API client can "
+        "self-approve mutating tools)."
+    )
 llm = OpenAICompatibleClient(
     base_url=settings.llm_base_url,
     api_key=settings.llm_api_key,
@@ -146,6 +158,12 @@ def require_api_key(authorization: str = Header(default="")) -> None:
 def require_approver_key(x_approver_key: str = Header(default="")) -> None:
     if not settings.approver_api_key:
         raise HTTPException(status_code=503, detail="Approver key not configured")
+    # Defense-in-depth alongside the startup check: never honour an approver key
+    # that equals the regular API key.
+    if settings.api_key and secrets.compare_digest(settings.api_key, settings.approver_api_key):
+        raise HTTPException(
+            status_code=503, detail="APPROVER_API_KEY must differ from API_KEY"
+        )
     if not secrets.compare_digest(x_approver_key, settings.approver_api_key):
         raise HTTPException(status_code=403, detail="Invalid approver key")
 
