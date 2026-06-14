@@ -1,4 +1,10 @@
-from tekla_agent.tools import extract_tool_call, known_tools, to_wire_args, validate_args
+from tekla_agent.tools import (
+    canonical_json,
+    extract_tool_call,
+    known_tools,
+    to_wire_args,
+    validate_args,
+)
 
 
 def test_known_tools_present() -> None:
@@ -91,6 +97,15 @@ def test_to_wire_uses_csharp_names() -> None:
     assert wire["BasePoint"] == {"X": 1.0, "Y": 2.0, "Z": 3.0}
     assert wire["Class"] == "3"
     assert "base_point" not in wire
+
+
+def test_canonical_json_keeps_cyrillic_utf8() -> None:
+    # The host hashes the raw UTF-8 bytes, so canonical JSON must not escape
+    # non-ASCII (a Cyrillic Name must round-trip byte-for-byte).
+    s = canonical_json({"Name": "Балка", "b": 1, "a": 2})
+    assert "Балка" in s
+    assert "\\u" not in s
+    assert s.index('"a"') < s.index('"b"')  # sorted keys
 
 
 def test_to_wire_query_objects_object_type() -> None:

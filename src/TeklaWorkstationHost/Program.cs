@@ -107,14 +107,19 @@ namespace TeklaWorkstationHost
                     return;
                 }
 
-                // Read the body BEFORE verifying so the approval can be bound to
-                // the actual request arguments (body_sha256), not just the tool.
-                var body = await ReadBodyAsync(context.Request).ConfigureAwait(false);
+                // Read the RAW body bytes BEFORE verifying so the approval can be
+                // bound to the actual request arguments (body_sha256). We hash the
+                // raw bytes and decode as UTF-8 explicitly — never via
+                // ContentEncoding, which falls back to the machine codepage for
+                // non-ASCII (e.g. a Cyrillic Name) without a charset and would
+                // break the hash match the orchestrator signed over UTF-8 bytes.
+                var bodyBytes = await ReadBodyBytesAsync(context.Request).ConfigureAwait(false);
+                var body = Encoding.UTF8.GetString(bodyBytes);
 
                 if (MutatingTools.Contains(tool))
                 {
                     var token = context.Request.Headers["X-Agent-Approval"];
-                    var check = _verifier.Verify(token, tool, Sha256Hex(body));
+                    var check = _verifier.Verify(token, tool, Sha256Hex(bodyBytes));
                     if (!check.Ok)
                     {
                         Audit(tool, false, "blocked_approval:" + check.Reason);
@@ -167,19 +172,20 @@ namespace TeklaWorkstationHost
             }
         }
 
-        private static async Task<string> ReadBodyAsync(HttpListenerRequest request)
+        private static async Task<byte[]> ReadBodyBytesAsync(HttpListenerRequest request)
         {
-            using (var reader = new StreamReader(request.InputStream, request.ContentEncoding))
+            using (var ms = new MemoryStream())
             {
-                return await reader.ReadToEndAsync().ConfigureAwait(false);
+                await request.InputStream.CopyToAsync(ms).ConfigureAwait(false);
+                return ms.ToArray();
             }
         }
 
-        private static string Sha256Hex(string body)
+        private static string Sha256Hex(byte[] data)
         {
             using (var sha = SHA256.Create())
             {
-                var hash = sha.ComputeHash(Encoding.UTF8.GetBytes(body ?? string.Empty));
+                var hash = sha.ComputeHash(data ?? new byte[0]);
                 var sb = new StringBuilder(hash.Length * 2);
                 foreach (var b in hash)
                 {

@@ -168,18 +168,18 @@ def main() -> None:
             for line in modelfile.read_text(encoding="utf-8").splitlines()
             if not line.strip().upper().startswith("FROM ")
         ]
+        generated.parent.mkdir(parents=True, exist_ok=True)
         generated.write_text(
             f"FROM {verified_gguf}\n" + "\n".join(kept) + "\n", encoding="utf-8"
         )
         return generated
 
-    command = (
-        f"ollama create {tag} -f {generated} (FROM {verified_gguf}) "
-        f"&& {env_prefix} ollama serve"
-    )
+    # Generate the Modelfile now so the printed command is actually runnable.
+    path = write_generated()
+    print(f"[info] generated {path} with FROM {verified_gguf}", file=sys.stderr)
+    command = f"ollama create {tag} -f {path} && {env_prefix} ollama serve"
 
     if args.run:
-        path = write_generated()
         print(f"[run] ollama create {tag} -f {path}", file=sys.stderr)
         rc = subprocess.call(["ollama", "create", tag, "-f", str(path)])
         if rc != 0:
