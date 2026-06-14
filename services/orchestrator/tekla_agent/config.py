@@ -8,7 +8,9 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     agent_env: str = "local"
-    agent_host: str = "0.0.0.0"
+    # Bind to loopback by default; expose to a network only via an explicit,
+    # TLS-terminating reverse proxy. A wide-open 0.0.0.0 default would be fail-open.
+    agent_host: str = "127.0.0.1"
     agent_port: int = 8080
 
     audit_log_path: Path = Path("data/audit/orchestrator.jsonl")

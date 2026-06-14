@@ -230,6 +230,48 @@ def test_token_bound_to_workstation_url(monkeypatch) -> None:
     assert resp.json()["decision"] == "blocked_requires_approval"
 
 
+def test_rate_limited_response_has_correlation_id(monkeypatch) -> None:
+    from tekla_agent import main as main_mod
+
+    monkeypatch.setattr(main_mod.settings, "rate_limit_per_minute", 0)
+    resp = client.get("/health")
+    assert resp.status_code == 429
+    assert "X-Correlation-Id" in resp.headers
+
+
+def test_pool_timeout_is_pre_send_retryable(monkeypatch) -> None:
+    # PoolTimeout = no connection acquired = provably pre-send -> retryable.
+    import httpx as _httpx
+
+    from tekla_agent import main as main_mod
+
+    beam_args, token = _mint_beam_token()
+    payload = {"tool": "CreateBeam", "args": beam_args, "user": "ivan",
+               "project_id": "P1", "approval_token": token, "dry_run": False}
+
+    class _PoolTimeoutClient:
+        def __init__(self, *a, **k):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def post(self, *a, **k):
+            raise _httpx.PoolTimeout("no connection available")
+
+    monkeypatch.setattr(main_mod.httpx, "AsyncClient", _PoolTimeoutClient)
+    r1 = client.post("/tool-calls", headers=AUTH, json=payload)
+    assert r1.json()["decision"] == "blocked_workstation_unreachable"
+
+    # Token survived (provably never sent): retry succeeds against a working host.
+    monkeypatch.setattr(main_mod.httpx, "AsyncClient", _CapturingClient)
+    r2 = client.post("/tool-calls", headers=AUTH, json=payload)
+    assert r2.json()["allowed"] is True
+
+
 def test_indeterminate_send_consumes_token(monkeypatch) -> None:
     # A read timeout AFTER sending must NOT reopen the nonce (the host may have
     # executed) — the token is marked spent, not retryable elsewhere.

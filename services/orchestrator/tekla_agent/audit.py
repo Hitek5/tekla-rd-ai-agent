@@ -78,6 +78,16 @@ class AuditLogger:
         # destroying the only evidence. A checkpoint AHEAD of the recovered tail
         # (or a hash mismatch at the same seq) means the on-disk log lost records.
         cp = read_checkpoint(path)
+        if cp is None and self._seq > 0:
+            # A non-empty log with NO readable checkpoint means the .head sidecar
+            # was deleted or corrupted — treat as tampering, not "no checkpoint".
+            # Otherwise the next write() would silently recreate a head from the
+            # (possibly already-truncated) tail, destroying the evidence.
+            raise AuditIntegrityError(
+                f"Audit log {path} has {self._seq} record(s) but its head "
+                "checkpoint is missing or corrupt — possible tampering. Investigate; "
+                "restore the .head from backup or re-baseline explicitly."
+            )
         if cp is not None and (
             cp["seq"] > self._seq
             or (cp["seq"] == self._seq and cp["hash"] != self._last_hash)

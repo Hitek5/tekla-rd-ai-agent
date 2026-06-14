@@ -39,6 +39,14 @@ approvals = ApprovalSigner(
     default_ttl_seconds=settings.approval_ttl_seconds,
 )
 
+# Fail closed at startup: outside local dev, an empty API_KEY would silently
+# disable the bearer gate on every endpoint — refuse to start instead.
+if settings.agent_env != "local" and not settings.api_key:
+    raise RuntimeError(
+        "API_KEY must be set when AGENT_ENV is not 'local' (an empty key disables "
+        "authentication on all endpoints)."
+    )
+
 # Fail closed at startup: the approver key gates human sign-off, so it must never
 # equal the regular API key — otherwise any API client could self-approve.
 if (
@@ -171,6 +179,18 @@ def require_approver_key(x_approver_key: str = Header(default="")) -> None:
         raise HTTPException(status_code=403, detail="Invalid approver key")
 
 
+def _prune_rate_buckets(now: float) -> None:
+    """Drop buckets with no recent activity so the dict cannot grow without bound
+    (a client that varies source IPs would otherwise leak memory forever)."""
+    stale = [
+        key
+        for key, dq in _rate_buckets.items()
+        if not dq or now - dq[-1] > 60
+    ]
+    for key in stale:
+        _rate_buckets.pop(key, None)
+
+
 @app.middleware("http")
 async def guardrails(request: Request, call_next):
     # Body-size enforcement lives in MaxBodySizeMiddleware (ASGI level) so it works
@@ -178,18 +198,29 @@ async def guardrails(request: Request, call_next):
     # NOTE: raising HTTPException here would bypass the exception handler (it sits
     # inside the middleware stack) and surface as a 500, so we return a response
     # directly to produce the advertised 429 status code.
+    # NOTE: behind a reverse proxy this keys on the proxy IP unless the proxy is
+    # trusted to set a real client identity — see deploy/nginx notes.
     client = request.client.host if request.client else "unknown"
     now = time.monotonic()
+    # Compute the correlation id first so it is attached even to a 429 response.
+    correlation_id = request.headers.get("x-correlation-id") or stable_hash(
+        {"client": client, "t": now}
+    )[7:23]
+
     bucket = _rate_buckets.setdefault(client, deque())
     while bucket and now - bucket[0] > 60:
         bucket.popleft()
     if len(bucket) >= settings.rate_limit_per_minute:
-        return JSONResponse(status_code=429, content={"detail": "Rate limit exceeded"})
+        audit.write("rate_limited", client=client, correlation_id=correlation_id)
+        return JSONResponse(
+            status_code=429,
+            content={"detail": "Rate limit exceeded"},
+            headers={"X-Correlation-Id": correlation_id},
+        )
     bucket.append(now)
+    if len(_rate_buckets) > 1024:
+        _prune_rate_buckets(now)
 
-    correlation_id = request.headers.get("x-correlation-id") or stable_hash(
-        {"client": client, "t": now}
-    )[7:23]
     response = await call_next(request)
     response.headers["X-Correlation-Id"] = correlation_id
     return response
@@ -692,8 +723,9 @@ async def tool_call(request: ToolCallRequest) -> ToolCallResponse:
                 content=body.encode("utf-8"),
                 headers=headers,
             )
-    except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
-        # Provably before the host received anything -> safe to release & retry.
+    except (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout) as exc:
+        # Provably before the host received anything (no connection was even
+        # established/acquired) -> safe to release & retry.
         if decision.requires_approval:
             approvals.rollback(request.approval_token)
         audit.write(

@@ -94,6 +94,36 @@ def test_truncation_while_stopped_fails_closed(tmp_path: Path) -> None:
         AuditLogger(log)
 
 
+def test_missing_checkpoint_on_nonempty_log_fails_closed(tmp_path: Path) -> None:
+    # Deleting the .head sidecar on a non-empty log must be treated as tampering,
+    # not "no checkpoint" (otherwise the next write silently re-bases it).
+    from tekla_agent.audit import AuditIntegrityError
+
+    log = tmp_path / "audit.jsonl"
+    logger = AuditLogger(log)
+    logger.write("e1", x=1)
+    logger.head_path.unlink()  # attacker removes the evidence sidecar
+
+    import pytest
+
+    with pytest.raises(AuditIntegrityError):
+        AuditLogger(log)
+
+
+def test_corrupt_checkpoint_on_nonempty_log_fails_closed(tmp_path: Path) -> None:
+    from tekla_agent.audit import AuditIntegrityError
+
+    log = tmp_path / "audit.jsonl"
+    logger = AuditLogger(log)
+    logger.write("e1", x=1)
+    logger.head_path.write_text("{not json", encoding="utf-8")
+
+    import pytest
+
+    with pytest.raises(AuditIntegrityError):
+        AuditLogger(log)
+
+
 def test_tail_truncation_detected_via_checkpoint(tmp_path: Path) -> None:
     from tekla_agent.audit import read_checkpoint
 

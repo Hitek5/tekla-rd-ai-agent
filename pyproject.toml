@@ -30,7 +30,7 @@ where = ["services/orchestrator"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["services/orchestrator"]
+pythonpath = ["services/orchestrator", "scripts"]
 
 [tool.ruff]
 line-length = 100

@@ -11,10 +11,13 @@ box. This script removes the guesswork:
 
 1. detect total VRAM via ``nvidia-smi``;
 2. select the largest preset that fits (``vram_tier_thresholds``);
-3. **verify the model file's SHA-256 against the signed manifest** before serving
-   — an unverified or substituted model never starts. This is the supply-chain
-   control that matters once weights are carried into a closed network on
-   removable media;
+3. **verify the model file's SHA-256 against the manifest** before serving — an
+   unverified or substituted model never starts. The manifest is plain JSON, so
+   the hash check only catches accidental corruption / wrong-file selection unless
+   the manifest itself is signed: set ``TEKLA_MODEL_MANIFEST_KEY`` (a secret NOT
+   carried on the same media as the weights) and a ``signature`` field, and the
+   manifest's HMAC is verified before any hash is trusted. Without that key the
+   check is integrity-only, not anti-tamper, and a warning is printed;
 4. emit (or run) the exact server command with VRAM-budgeted flags.
 
 It prints by default and only launches with ``--run``, so it is safe to inspect.
@@ -24,6 +27,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import hmac
 import json
 import os
 import shlex
@@ -67,10 +71,40 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def verify_model(manifest_path: Path, gguf_file: str, model_path: Path) -> None:
+def _manifest_signature(models: list, key: bytes) -> str:
+    payload = json.dumps(models, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hmac.new(key, payload, hashlib.sha256).hexdigest()
+
+
+def verify_model(
+    manifest_path: Path,
+    gguf_file: str,
+    model_path: Path,
+    manifest_key: bytes | None = None,
+) -> None:
     if not manifest_path.exists():
         raise SystemExit(f"Manifest not found: {manifest_path}. Refusing to serve unverified model.")
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+    # Anti-tamper: if a manifest key is configured, the manifest's own HMAC must
+    # verify before any per-file hash is trusted (an attacker who can swap the
+    # GGUF on the media can also edit a co-located unsigned manifest).
+    if manifest_key:
+        expected_sig = _manifest_signature(manifest.get("models", []), manifest_key)
+        actual_sig = str(manifest.get("signature", ""))
+        if not actual_sig or not hmac.compare_digest(actual_sig, expected_sig):
+            raise SystemExit(
+                "Manifest signature missing or invalid. Refusing to serve. "
+                "Re-sign the manifest with TEKLA_MODEL_MANIFEST_KEY."
+            )
+        print("[ok] manifest signature verified", file=sys.stderr)
+    else:
+        print(
+            "[warn] TEKLA_MODEL_MANIFEST_KEY not set — manifest is UNSIGNED; the hash "
+            "check guards against corruption, not deliberate substitution.",
+            file=sys.stderr,
+        )
+
     entry = next(
         (m for m in manifest.get("models", []) if m.get("gguf_file") == gguf_file),
         None,
@@ -114,8 +148,20 @@ def main() -> None:
     name, preset = select_preset(config, vram)
     print(f"[info] {vram:.1f} GB VRAM -> preset '{name}' ({preset['model']})", file=sys.stderr)
 
-    if not args.skip_verify:
-        verify_model(args.manifest, preset["gguf_file"], args.model_dir / preset["gguf_file"])
+    if args.skip_verify:
+        print(
+            "[warn] --skip-verify: model integrity check BYPASSED. Never use this in "
+            "a closed-network/pilot deployment.",
+            file=sys.stderr,
+        )
+    else:
+        manifest_key_env = os.environ.get("TEKLA_MODEL_MANIFEST_KEY") or ""
+        verify_model(
+            args.manifest,
+            preset["gguf_file"],
+            args.model_dir / preset["gguf_file"],
+            manifest_key=manifest_key_env.encode("utf-8") if manifest_key_env else None,
+        )
 
     if args.engine == "llama.cpp":
         # llama.cpp serves the verified GGUF file directly.
