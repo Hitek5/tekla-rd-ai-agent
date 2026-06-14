@@ -27,7 +27,10 @@ from tekla_agent.tools import (
 
 app = FastAPI(title="Tekla/RD Local AI Agent Orchestrator", version="0.2.0")
 
-audit = AuditLogger(settings.audit_log_path)
+# HMAC the audit chain so an actor with write access to the JSONL (but not the
+# secret) cannot rewrite records and recompute a valid chain.
+_audit_hmac_key = (settings.audit_hmac_key or settings.approval_secret).encode("utf-8")
+audit = AuditLogger(settings.audit_log_path, hmac_key=_audit_hmac_key)
 policy = ToolPolicy(settings.tool_policy_path)
 retriever = LocalJsonlRetriever(settings.rag_chunks_path)
 approvals = ApprovalSigner(
@@ -624,9 +627,52 @@ async def tool_call(request: ToolCallRequest) -> ToolCallResponse:
             },
         )
 
-    # Execution is now authorised by policy. Burn the single-use nonce here, so a
-    # token is only spent when the call actually proceeds to the workstation.
-    if decision.requires_approval:
+    # Execution is authorised by policy and the approval was already verified
+    # (consume=False) at the gate above. Send the EXACT canonical bytes the token
+    # is bound to, so the host can verify body_sha256 by hashing the raw request
+    # body (no re-serialisation).
+    body = _canonical_body(request.tool, args_for_call)[0]
+    headers = {"Content-Type": "application/json"}
+    # Only forward the token when this tool actually required approval. Never
+    # attach a token to a read-only call (the workstation_url is caller-controlled,
+    # so forwarding an unspent token there would let it be exfiltrated and replayed).
+    if decision.requires_approval and request.approval_token:
+        headers["X-Agent-Approval"] = request.approval_token
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                f"{request.workstation_url.rstrip('/')}/tools/{request.tool}",
+                content=body.encode("utf-8"),
+                headers=headers,
+            )
+    except httpx.HTTPError as exc:
+        # The host was unreachable BEFORE it accepted the call (connection refused
+        # / timeout). Do NOT consume the approval, so the same call can be retried
+        # without a fresh human sign-off. The host never executed anything.
+        audit.write(
+            "tool_call_transport_error",
+            user=request.user,
+            project_id=request.project_id,
+            tool=request.tool,
+            reason=str(exc),
+        )
+        return ToolCallResponse(
+            allowed=False,
+            decision="blocked_workstation_unreachable",
+            reason=str(exc),
+            dry_run=False,
+        )
+
+    try:
+        result: dict[str, Any] = response.json()
+    except ValueError:
+        result = {"raw": response.text}
+
+    # Burn the single-use nonce only once the host has ACCEPTED the call, so a
+    # transient transport failure does not waste a human approval. Double execution
+    # is prevented by the host's own nonce ledger.
+    if decision.requires_approval and response.status_code < 400:
         consumed = approvals.verify(
             request.approval_token,
             tool=request.tool,
@@ -643,35 +689,6 @@ async def tool_call(request: ToolCallRequest) -> ToolCallResponse:
                 tool=request.tool,
                 reason=consumed.reason,
             )
-            return ToolCallResponse(
-                allowed=False,
-                decision="blocked_requires_approval",
-                reason=consumed.reason,
-                dry_run=False,
-            )
-
-    # Send the EXACT canonical bytes the token is bound to, so the host can verify
-    # body_sha256 by hashing the raw request body (no re-serialisation).
-    body = _canonical_body(request.tool, args_for_call)[0]
-    headers = {"Content-Type": "application/json"}
-    # Only forward the token when this tool actually required approval — by here it
-    # has been verified AND consumed for THIS same tool/args. Never attach a token
-    # to a read-only call (the workstation_url is caller-controlled, so forwarding
-    # an unspent token there would let it be exfiltrated and replayed).
-    if decision.requires_approval and request.approval_token:
-        headers["X-Agent-Approval"] = request.approval_token
-
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        response = await client.post(
-            f"{request.workstation_url.rstrip('/')}/tools/{request.tool}",
-            content=body.encode("utf-8"),
-            headers=headers,
-        )
-
-    try:
-        result: dict[str, Any] = response.json()
-    except ValueError:
-        result = {"raw": response.text}
 
     audit.write(
         "tool_call_completed",
@@ -697,4 +714,4 @@ async def tool_call(request: ToolCallRequest) -> ToolCallResponse:
 @app.get("/audit/verify", dependencies=[Depends(require_api_key)])
 async def audit_verify() -> dict[str, Any]:
     """Verify the tamper-evident audit chain (for ИБ review)."""
-    return verify_chain(settings.audit_log_path)
+    return verify_chain(settings.audit_log_path, hmac_key=_audit_hmac_key)

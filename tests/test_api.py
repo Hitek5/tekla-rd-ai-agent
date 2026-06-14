@@ -135,6 +135,54 @@ def test_mutating_call_forwards_consumed_token(monkeypatch) -> None:
     assert _CapturingClient.captured["headers"]["X-Agent-Approval"] == token
 
 
+def test_transport_error_does_not_consume_token(monkeypatch) -> None:
+    # A transport failure before the host accepts must NOT burn the approval —
+    # the same call must be retryable without a fresh human sign-off.
+    import httpx as _httpx
+
+    from tekla_agent import main as main_mod
+
+    beam_args = {
+        "start": {"x": 0, "y": 0, "z": 0},
+        "end": {"x": 6000, "y": 0, "z": 0},
+        "profile": "HEA300",
+        "material": "S355",
+    }
+    token = client.post(
+        "/approvals",
+        headers={"X-Approver-Key": "test-approver-key"},
+        json={"tool": "CreateBeam", "args": beam_args, "user": "ivan",
+              "project_id": "P1", "approver": "lead"},
+    ).json()["approval_token"]
+
+    class _BoomClient:
+        def __init__(self, *a, **k):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def post(self, *a, **k):
+            raise _httpx.ConnectError("connection refused")
+
+    payload = {"tool": "CreateBeam", "args": beam_args, "user": "ivan",
+               "project_id": "P1", "approval_token": token, "dry_run": False}
+
+    monkeypatch.setattr(main_mod.httpx, "AsyncClient", _BoomClient)
+    r1 = client.post("/tool-calls", headers=AUTH, json=payload)
+    assert r1.status_code == 200
+    assert r1.json()["decision"] == "blocked_workstation_unreachable"
+
+    # Token survived the transient failure: retry against a working host succeeds.
+    monkeypatch.setattr(main_mod.httpx, "AsyncClient", _CapturingClient)
+    r2 = client.post("/tool-calls", headers=AUTH, json=payload)
+    assert r2.status_code == 200
+    assert r2.json()["allowed"] is True
+
+
 def test_dry_run_invalid_args_not_allowed() -> None:
     # Preflight must not report an unexecutable call as allowed.
     resp = client.post(

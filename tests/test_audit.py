@@ -41,6 +41,39 @@ def test_tampering_is_detected(tmp_path: Path) -> None:
     assert report["line"] == 1
 
 
+def test_hmac_chain_resists_recompute(tmp_path: Path) -> None:
+    # An actor with file write but no key cannot forge a valid HMAC chain.
+    import hashlib
+    import json as _json
+
+    key = b"super-secret-audit-key-0123456789"
+    log = tmp_path / "audit.jsonl"
+    logger = AuditLogger(log, hmac_key=key)
+    logger.write("e1", x=1)
+    logger.write("e2", x=2)
+    assert verify_chain(log, hmac_key=key)["ok"]
+
+    lines = log.read_text(encoding="utf-8").splitlines()
+    rec = _json.loads(lines[1])
+    rec["x"] = 999  # tamper
+    body = {k: v for k, v in rec.items() if k != "hash"}
+    payload = _json.dumps(body, ensure_ascii=False, sort_keys=True, default=str).encode("utf-8")
+    rec["hash"] = "sha256:" + hashlib.sha256(payload).hexdigest()  # attacker recompute, no key
+    lines[1] = _json.dumps(rec, ensure_ascii=False, sort_keys=True)
+    log.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    report = verify_chain(log, hmac_key=key)
+    assert not report["ok"]
+    assert report["reason"].startswith("tampered_record")
+
+
+def test_hmac_chain_fails_without_key(tmp_path: Path) -> None:
+    key = b"super-secret-audit-key-0123456789"
+    log = tmp_path / "audit.jsonl"
+    AuditLogger(log, hmac_key=key).write("e1", x=1)
+    assert not verify_chain(log)["ok"]  # plain SHA-256 cannot reproduce the HMAC
+
+
 def test_non_object_line_reported_not_crashed(tmp_path: Path) -> None:
     log = tmp_path / "audit.jsonl"
     log.write_text('"just a string, not an object"\n', encoding="utf-8")

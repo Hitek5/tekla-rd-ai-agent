@@ -47,6 +47,11 @@ class Settings(BaseSettings):
     # Separate, stronger key authorising the /approvals minting endpoint.
     approver_api_key: str = ""
 
+    # Key that HMACs the audit hash chain so a file-only attacker cannot forge it.
+    # Empty falls back to approval_secret (always strong); set a dedicated value to
+    # decouple audit integrity from the approval secret.
+    audit_hmac_key: str = ""
+
     # Abuse limits.
     max_request_bytes: int = 65_536
     rate_limit_per_minute: int = 60

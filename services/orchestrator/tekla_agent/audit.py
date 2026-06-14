@@ -6,10 +6,17 @@ leave no trace. Both Russian ИБ requirements (целостность журн�
 international guidance (NIST SP 800-92 tamper-evident logging) expect the log to
 *detect* modification.
 
-We add a hash chain: every record carries a monotonic ``seq`` and the SHA-256
+We add a hash chain: every record carries a monotonic ``seq`` and the
 ``prev_hash`` of the previous record. Each record's own ``hash`` covers its
 content **and** ``prev_hash``. Editing, reordering, or deleting any line breaks
 the chain from that point on, and :func:`verify_chain` pinpoints where.
+
+Crucially, the chain hash is an **HMAC keyed by a secret** when one is supplied.
+A plain SHA-256 chain only detects accidental corruption: an actor with write
+access to the JSONL could rewrite a record and recompute every following hash.
+With HMAC, that actor cannot forge the chain without the key (held in the
+orchestrator's env, not in the writable log). Pass ``hmac_key=None`` for the
+legacy plain-SHA-256 behaviour (dev only).
 
 This needs no database and no network — it is a pure local file, which is exactly
 what an air-gapped host can rely on.
@@ -18,6 +25,7 @@ what an air-gapped host can rely on.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 from datetime import UTC, datetime
 from pathlib import Path
@@ -33,8 +41,13 @@ def stable_hash(value: Any) -> str:
     return f"sha256:{digest}"
 
 
-def _record_hash(record_without_hash: dict[str, Any]) -> str:
-    return stable_hash(record_without_hash)
+def _record_hash(record_without_hash: dict[str, Any], hmac_key: bytes | None = None) -> str:
+    payload = json.dumps(
+        record_without_hash, ensure_ascii=False, sort_keys=True, default=str
+    ).encode("utf-8")
+    if hmac_key:
+        return "hmac-sha256:" + hmac.new(hmac_key, payload, hashlib.sha256).hexdigest()
+    return "sha256:" + hashlib.sha256(payload).hexdigest()
 
 
 class AuditLogger:
@@ -44,8 +57,9 @@ class AuditLogger:
     concurrent FastAPI requests cannot interleave and fork the chain.
     """
 
-    def __init__(self, path: Path):
+    def __init__(self, path: Path, hmac_key: bytes | None = None):
         self.path = path
+        self._hmac_key = hmac_key
         self._lock = Lock()
         self._seq, self._last_hash = self._recover_tail()
 
@@ -79,7 +93,7 @@ class AuditLogger:
                 "prev_hash": self._last_hash,
                 **fields,
             }
-            record_hash = _record_hash(body)
+            record_hash = _record_hash(body, self._hmac_key)
             record = {**body, "hash": record_hash}
 
             self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -91,12 +105,13 @@ class AuditLogger:
             return record
 
 
-def verify_chain(path: Path) -> dict[str, Any]:
+def verify_chain(path: Path, hmac_key: bytes | None = None) -> dict[str, Any]:
     """Validate an audit file's hash chain.
 
-    Returns a report with ``ok`` plus, on failure, the first offending sequence
-    number and a human-readable reason. Safe to run on a copy exported from the
-    air-gapped host for external (ИБ) review.
+    Pass the same ``hmac_key`` the log was written with; without it, an HMAC chain
+    will (correctly) fail to verify. Returns a report with ``ok`` plus, on failure,
+    the first offending sequence number and a human-readable reason. Safe to run on
+    a copy exported from the air-gapped host for external (ИБ) review.
     """
     if not path.exists():
         return {"ok": True, "records": 0, "reason": "empty"}
@@ -141,7 +156,7 @@ def verify_chain(path: Path) -> dict[str, Any]:
                 }
             stored_hash = record.get("hash")
             body = {k: v for k, v in record.items() if k != "hash"}
-            if _record_hash(body) != stored_hash:
+            if _record_hash(body, hmac_key) != stored_hash:
                 return {
                     "ok": False,
                     "records": count,
@@ -155,9 +170,13 @@ def verify_chain(path: Path) -> dict[str, Any]:
 
 
 if __name__ == "__main__":  # pragma: no cover - CLI for ИБ review
+    import os
     import sys
 
     target = Path(sys.argv[1] if len(sys.argv) > 1 else "data/audit/orchestrator.jsonl")
-    report = verify_chain(target)
+    # Provide the HMAC key (AUDIT_HMAC_KEY, else APPROVAL_SECRET) to verify a keyed
+    # chain; omit for a legacy plain-SHA-256 log.
+    key = os.environ.get("AUDIT_HMAC_KEY") or os.environ.get("APPROVAL_SECRET") or ""
+    report = verify_chain(target, key.encode("utf-8") if key else None)
     print(json.dumps(report, ensure_ascii=False, indent=2))
     raise SystemExit(0 if report["ok"] else 1)
