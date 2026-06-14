@@ -183,6 +183,36 @@ def test_transport_error_does_not_consume_token(monkeypatch) -> None:
     assert r2.json()["allowed"] is True
 
 
+def test_token_cannot_be_used_twice(monkeypatch) -> None:
+    # Single-use end-to-end: once committed, the same token is refused.
+    from tekla_agent import main as main_mod
+
+    beam_args = {
+        "start": {"x": 0, "y": 0, "z": 0},
+        "end": {"x": 6000, "y": 0, "z": 0},
+        "profile": "HEA300",
+        "material": "S355",
+    }
+    token = client.post(
+        "/approvals",
+        headers={"X-Approver-Key": "test-approver-key"},
+        json={"tool": "CreateBeam", "args": beam_args, "user": "ivan",
+              "project_id": "P1", "approver": "lead"},
+    ).json()["approval_token"]
+    payload = {"tool": "CreateBeam", "args": beam_args, "user": "ivan",
+               "project_id": "P1", "approval_token": token, "dry_run": False}
+
+    monkeypatch.setattr(main_mod.httpx, "AsyncClient", _CapturingClient)
+    first = client.post("/tool-calls", headers=AUTH, json=payload)
+    assert first.json()["allowed"] is True
+
+    # Reuse is refused: the spent nonce makes the approval invalid, so policy
+    # blocks the call as requiring approval.
+    second = client.post("/tool-calls", headers=AUTH, json=payload)
+    assert second.json()["allowed"] is False
+    assert second.json()["decision"] == "blocked_requires_approval"
+
+
 def test_dry_run_invalid_args_not_allowed() -> None:
     # Preflight must not report an unexecutable call as allowed.
     resp = client.post(

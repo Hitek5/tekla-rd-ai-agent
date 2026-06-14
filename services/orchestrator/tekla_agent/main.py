@@ -639,6 +639,33 @@ async def tool_call(request: ToolCallRequest) -> ToolCallResponse:
     if decision.requires_approval and request.approval_token:
         headers["X-Agent-Approval"] = request.approval_token
 
+    # Reserve the single-use nonce BEFORE sending: this atomically blocks a second
+    # concurrent request carrying the same approval from also executing (even if it
+    # targets a different workstation_url). The reservation is committed only once
+    # the host accepts, and rolled back on any failure so the call stays retryable.
+    if decision.requires_approval:
+        reserved = approvals.reserve(
+            request.approval_token,
+            tool=request.tool,
+            args=args_for_call,
+            user=request.user,
+            project_id=request.project_id,
+        )
+        if not reserved.valid:
+            audit.write(
+                "tool_call_approval_reserve_failed",
+                user=request.user,
+                project_id=request.project_id,
+                tool=request.tool,
+                reason=reserved.reason,
+            )
+            return ToolCallResponse(
+                allowed=False,
+                decision="blocked_requires_approval",
+                reason=reserved.reason,
+                dry_run=False,
+            )
+
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(
@@ -647,9 +674,10 @@ async def tool_call(request: ToolCallRequest) -> ToolCallResponse:
                 headers=headers,
             )
     except httpx.HTTPError as exc:
-        # The host was unreachable BEFORE it accepted the call (connection refused
-        # / timeout). Do NOT consume the approval, so the same call can be retried
-        # without a fresh human sign-off. The host never executed anything.
+        # Host unreachable BEFORE it accepted the call: release the reservation so
+        # the same call can be retried without a fresh human sign-off.
+        if decision.requires_approval:
+            approvals.rollback(request.approval_token)
         audit.write(
             "tool_call_transport_error",
             user=request.user,
@@ -669,26 +697,13 @@ async def tool_call(request: ToolCallRequest) -> ToolCallResponse:
     except ValueError:
         result = {"raw": response.text}
 
-    # Burn the single-use nonce only once the host has ACCEPTED the call, so a
-    # transient transport failure does not waste a human approval. Double execution
-    # is prevented by the host's own nonce ledger.
-    if decision.requires_approval and response.status_code < 400:
-        consumed = approvals.verify(
-            request.approval_token,
-            tool=request.tool,
-            args=args_for_call,
-            user=request.user,
-            project_id=request.project_id,
-            consume=True,
-        )
-        if not consumed.valid:
-            audit.write(
-                "tool_call_approval_consume_failed",
-                user=request.user,
-                project_id=request.project_id,
-                tool=request.tool,
-                reason=consumed.reason,
-            )
+    # Commit the nonce on acceptance (permanently spent); roll back on host
+    # rejection so the approval can be retried after the cause is fixed.
+    if decision.requires_approval:
+        if response.status_code < 400:
+            approvals.commit(request.approval_token)
+        else:
+            approvals.rollback(request.approval_token)
 
     audit.write(
         "tool_call_completed",

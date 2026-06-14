@@ -132,6 +132,25 @@ def test_mint_and_verify_with_normalised_args(tmp_path: Path) -> None:
     assert verdict.valid
 
 
+def test_reserve_blocks_concurrent_then_rollback_allows_retry(tmp_path: Path) -> None:
+    ledger = NonceLedger(tmp_path / "l.log")
+    assert ledger.reserve("n1") is True
+    assert ledger.reserve("n1") is False  # second concurrent claim blocked
+    ledger.rollback("n1")
+    assert ledger.reserve("n1") is True  # retryable after rollback
+    ledger.commit("n1")
+    assert ledger.is_spent("n1") is True
+    assert ledger.reserve("n1") is False  # committed = permanently spent
+
+
+def test_commit_persists_across_restart(tmp_path: Path) -> None:
+    path = tmp_path / "l.log"
+    ledger = NonceLedger(path)
+    ledger.reserve("n9")
+    ledger.commit("n9")
+    assert NonceLedger(path).is_spent("n9") is True
+
+
 def test_ledger_persists_across_restart(tmp_path: Path) -> None:
     signer = make_signer(tmp_path)
     token = signer.mint(

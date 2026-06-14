@@ -103,6 +103,11 @@ class NonceLedger:
         self.path = path
         self._lock = Lock()
         self._seen: set[str] = set()
+        # In-flight reservations: a nonce is reserved before the workstation call
+        # and committed (persisted) only once the call is accepted, or rolled back
+        # on failure. Reservations are in-memory only — a crash mid-flight simply
+        # releases them, which is the safe outcome.
+        self._reserved: set[str] = set()
         self._load()
 
     def _load(self) -> None:
@@ -117,8 +122,37 @@ class NonceLedger:
     def is_spent(self, nonce: str) -> bool:
         return nonce in self._seen
 
+    def reserve(self, nonce: str) -> bool:
+        """Atomically claim a nonce for an in-flight call.
+
+        Returns False if it is already spent or already reserved — this is what
+        blocks two concurrent requests carrying the same approval from both
+        executing.
+        """
+        with self._lock:
+            if nonce in self._seen or nonce in self._reserved:
+                return False
+            self._reserved.add(nonce)
+            return True
+
+    def commit(self, nonce: str) -> None:
+        """Finalise a reserved nonce as permanently spent (persisted to disk)."""
+        with self._lock:
+            self._reserved.discard(nonce)
+            if nonce in self._seen:
+                return
+            self._seen.add(nonce)
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            with self.path.open("a", encoding="utf-8") as handle:
+                handle.write(nonce + "\n")
+
+    def rollback(self, nonce: str) -> None:
+        """Release a reservation so the approval can be retried."""
+        with self._lock:
+            self._reserved.discard(nonce)
+
     def burn(self, nonce: str) -> bool:
-        """Mark a nonce consumed. Returns False if it was already spent."""
+        """Mark a nonce consumed in one step. Returns False if already spent."""
         with self._lock:
             if nonce in self._seen:
                 return False
@@ -267,3 +301,39 @@ class ApprovalSigner:
             return ApprovalVerdict(False, "already_used", claims)
 
         return ApprovalVerdict(True, "approved", claims)
+
+    def reserve(
+        self,
+        token: str | None,
+        *,
+        tool: str,
+        args: Any,
+        user: str,
+        project_id: str,
+    ) -> ApprovalVerdict:
+        """Validate a token and atomically reserve its nonce for an in-flight call.
+
+        Reserving before the workstation call (and committing only on acceptance)
+        gives single-use semantics that survive both concurrent duplicates and
+        transient transport failures.
+        """
+        verdict = self.verify(
+            token, tool=tool, args=args, user=user, project_id=project_id, consume=False
+        )
+        if not verdict.valid or verdict.claims is None:
+            return verdict
+        if not self._ledger.reserve(verdict.claims.nonce):
+            return ApprovalVerdict(False, "already_used", verdict.claims)
+        return ApprovalVerdict(True, "reserved", verdict.claims)
+
+    def commit(self, token: str | None) -> None:
+        """Finalise a previously reserved token as spent."""
+        parsed = self._parse(token) if token else None
+        if parsed is not None:
+            self._ledger.commit(parsed[0].nonce)
+
+    def rollback(self, token: str | None) -> None:
+        """Release a reservation so the approval can be retried."""
+        parsed = self._parse(token) if token else None
+        if parsed is not None:
+            self._ledger.rollback(parsed[0].nonce)
