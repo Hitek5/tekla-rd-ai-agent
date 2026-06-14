@@ -302,8 +302,9 @@ class ApprovalSigner:
         if claims.project_id != project_id:
             return ApprovalVerdict(False, "project_mismatch", claims)
         # Reject a token presented for a different workstation than it was minted
-        # for (blocks cross-host replay of a leaked/uncommitted nonce).
-        if claims.workstation_url and claims.workstation_url != workstation_url:
+        # for (blocks cross-host replay of a leaked/uncommitted nonce). An empty
+        # claim is treated as unbound and rejected, never as "matches anything".
+        if not claims.workstation_url or claims.workstation_url != workstation_url:
             return ApprovalVerdict(False, "workstation_mismatch", claims)
         if self._ledger.is_spent(claims.nonce):
             return ApprovalVerdict(False, "already_used", claims)

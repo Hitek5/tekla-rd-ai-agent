@@ -448,6 +448,16 @@ def test_approver_key_equal_to_api_key_rejected(monkeypatch) -> None:
     assert resp.status_code == 503
 
 
+def test_mint_rejects_blank_workstation_url() -> None:
+    resp = client.post(
+        "/approvals",
+        headers={"X-Approver-Key": "test-approver-key"},
+        json={"tool": "GetSelection", "args": {}, "user": "ivan",
+              "project_id": "P1", "approver": "lead", "workstation_url": "   "},
+    )
+    assert resp.status_code == 400
+
+
 def test_mint_rejects_invalid_args() -> None:
     resp = client.post(
         "/approvals",

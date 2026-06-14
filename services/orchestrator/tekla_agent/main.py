@@ -509,6 +509,11 @@ async def mint_approval(request: MintApprovalRequest) -> MintApprovalResponse:
         raise HTTPException(status_code=400, detail=f"Cannot approve invalid args: {args_reason}")
     args_for_token = normalised if normalised is not None else request.args
 
+    # A blank workstation_url would make the binding meaningless (both verifiers
+    # reject empty claims, but fail fast here with a clear error).
+    if not request.workstation_url.strip():
+        raise HTTPException(status_code=400, detail="workstation_url must not be blank")
+
     # Bind the token to the exact canonical body the host will receive, so the
     # host can enforce argument binding by hashing the raw request bytes.
     _body, body_sha = _canonical_body(request.tool, args_for_token)

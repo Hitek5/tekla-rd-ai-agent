@@ -419,10 +419,11 @@ namespace TeklaWorkstationHost
             // Workstation binding: reject a token minted for a different host. With
             // several hosts sharing the secret, this stops a token leaked from host
             // A being posted directly to host B (which the orchestrator's own URL
-            // check cannot see). Enforced whenever the token carries the claim.
+            // check cannot see). An empty claim is treated as unbound and rejected,
+            // never as "matches any host".
             var boundUrl = claims.Value<string>("workstation_url");
-            if (!string.IsNullOrEmpty(boundUrl)
-                && !string.Equals(boundUrl, _workstationUrl, StringComparison.OrdinalIgnoreCase))
+            if (string.IsNullOrEmpty(boundUrl)
+                || !string.Equals(boundUrl, _workstationUrl, StringComparison.OrdinalIgnoreCase))
             {
                 return ApprovalCheck.Fail("workstation_mismatch");
             }

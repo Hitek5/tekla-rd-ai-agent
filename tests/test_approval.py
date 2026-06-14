@@ -9,6 +9,7 @@ from tekla_agent.tools import validate_args
 
 SECRET = "test-secret-at-least-16-chars-long"
 ARGS = {"start": {"x": 0, "y": 0, "z": 0}, "profile": "HEA300"}
+WS = "http://127.0.0.1:51234"
 
 
 class FakeClock:
@@ -42,9 +43,10 @@ def test_consume_false_does_not_burn(tmp_path: Path) -> None:
     # executes, so a policy rejection does not waste a single-use approval.
     signer = make_signer(tmp_path)
     token = signer.mint(
-        tool="CreateBeam", args=ARGS, user="ivan", project_id="P1", approver="lead", nonce="n1"
+        tool="CreateBeam", args=ARGS, user="ivan", project_id="P1", approver="lead",
+        nonce="n1", workstation_url=WS,
     )
-    kwargs = dict(tool="CreateBeam", args=ARGS, user="ivan", project_id="P1")
+    kwargs = dict(tool="CreateBeam", args=ARGS, user="ivan", project_id="P1", workstation_url=WS)
     assert signer.verify(token, consume=False, **kwargs).valid
     assert signer.verify(token, consume=False, **kwargs).valid  # still not burned
     assert signer.verify(token, consume=True, **kwargs).valid  # now burned
@@ -54,12 +56,13 @@ def test_consume_false_does_not_burn(tmp_path: Path) -> None:
 def test_valid_token_verifies_once(tmp_path: Path) -> None:
     signer = make_signer(tmp_path)
     token = signer.mint(
-        tool="CreateBeam", args=ARGS, user="ivan", project_id="P1", approver="lead", nonce="n1"
+        tool="CreateBeam", args=ARGS, user="ivan", project_id="P1", approver="lead",
+        nonce="n1", workstation_url=WS,
     )
-    v1 = signer.verify(token, tool="CreateBeam", args=ARGS, user="ivan", project_id="P1")
+    v1 = signer.verify(token, tool="CreateBeam", args=ARGS, user="ivan", project_id="P1", workstation_url=WS)
     assert v1.valid
     # Single-use: the second verification fails (nonce already burned).
-    v2 = signer.verify(token, tool="CreateBeam", args=ARGS, user="ivan", project_id="P1")
+    v2 = signer.verify(token, tool="CreateBeam", args=ARGS, user="ivan", project_id="P1", workstation_url=WS)
     assert not v2.valid
     assert v2.reason == "already_used"
 
@@ -122,12 +125,12 @@ def test_mint_and_verify_with_normalised_args(tmp_path: Path) -> None:
     _ok, _r, normalised = validate_args("CreateBeam", raw)
     token = signer.mint(
         tool="CreateBeam", args=normalised, user="ivan", project_id="P1",
-        approver="lead", nonce="n1",
+        approver="lead", nonce="n1", workstation_url=WS,
     )
     # Second validation of the same raw input yields identical normalised args.
     _ok2, _r2, normalised2 = validate_args("CreateBeam", raw)
     verdict = signer.verify(
-        token, tool="CreateBeam", args=normalised2, user="ivan", project_id="P1"
+        token, tool="CreateBeam", args=normalised2, user="ivan", project_id="P1", workstation_url=WS
     )
     assert verdict.valid
 
@@ -154,11 +157,16 @@ def test_commit_persists_across_restart(tmp_path: Path) -> None:
 def test_ledger_persists_across_restart(tmp_path: Path) -> None:
     signer = make_signer(tmp_path)
     token = signer.mint(
-        tool="CreateBeam", args=ARGS, user="ivan", project_id="P1", approver="lead", nonce="n1"
+        tool="CreateBeam", args=ARGS, user="ivan", project_id="P1", approver="lead",
+        nonce="n1", workstation_url=WS,
     )
-    assert signer.verify(token, tool="CreateBeam", args=ARGS, user="ivan", project_id="P1").valid
+    assert signer.verify(
+        token, tool="CreateBeam", args=ARGS, user="ivan", project_id="P1", workstation_url=WS
+    ).valid
     # New signer instance sharing the same ledger file = simulated restart.
     signer2 = make_signer(tmp_path)
-    verdict = signer2.verify(token, tool="CreateBeam", args=ARGS, user="ivan", project_id="P1")
+    verdict = signer2.verify(
+        token, tool="CreateBeam", args=ARGS, user="ivan", project_id="P1", workstation_url=WS
+    )
     assert not verdict.valid
     assert verdict.reason == "already_used"
