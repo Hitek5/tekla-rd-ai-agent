@@ -14,6 +14,7 @@ data/models/*
 !data/models/manifest.example.json
 data/checkpoints/
 data/audit/*.jsonl
+data/audit/*.head
 data/eval/runs/
 airgap-bundle/
 

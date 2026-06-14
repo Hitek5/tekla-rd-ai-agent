@@ -183,6 +183,85 @@ def test_transport_error_does_not_consume_token(monkeypatch) -> None:
     assert r2.json()["allowed"] is True
 
 
+def _mint_beam_token():
+    beam_args = {
+        "start": {"x": 0, "y": 0, "z": 0},
+        "end": {"x": 6000, "y": 0, "z": 0},
+        "profile": "HEA300",
+        "material": "S355",
+    }
+    token = client.post(
+        "/approvals",
+        headers={"X-Approver-Key": "test-approver-key"},
+        json={"tool": "CreateBeam", "args": beam_args, "user": "ivan",
+              "project_id": "P1", "approver": "lead"},
+    ).json()["approval_token"]
+    return beam_args, token
+
+
+def test_indeterminate_send_consumes_token(monkeypatch) -> None:
+    # A read timeout AFTER sending must NOT reopen the nonce (the host may have
+    # executed) — the token is marked spent, not retryable elsewhere.
+    import httpx as _httpx
+
+    from tekla_agent import main as main_mod
+
+    beam_args, token = _mint_beam_token()
+    payload = {"tool": "CreateBeam", "args": beam_args, "user": "ivan",
+               "project_id": "P1", "approval_token": token, "dry_run": False}
+
+    class _TimeoutClient:
+        def __init__(self, *a, **k):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def post(self, *a, **k):
+            raise _httpx.ReadTimeout("read timed out")
+
+    monkeypatch.setattr(main_mod.httpx, "AsyncClient", _TimeoutClient)
+    r1 = client.post("/tool-calls", headers=AUTH, json=payload)
+    assert r1.json()["decision"] == "blocked_workstation_indeterminate"
+
+    # Token is now spent: a retry (even to a working host) is refused.
+    monkeypatch.setattr(main_mod.httpx, "AsyncClient", _CapturingClient)
+    r2 = client.post("/tool-calls", headers=AUTH, json=payload)
+    assert r2.json()["allowed"] is False
+
+
+def test_host_error_does_not_reopen_token(monkeypatch) -> None:
+    # A >=400 from the host (post-verify dispatch failure) means the host burned
+    # its nonce; the orchestrator must commit, not reopen.
+    from tekla_agent import main as main_mod
+
+    beam_args, token = _mint_beam_token()
+    payload = {"tool": "CreateBeam", "args": beam_args, "user": "ivan",
+               "project_id": "P1", "approval_token": token, "dry_run": False}
+
+    class _ErrResp:
+        status_code = 500
+
+        def json(self):
+            return {"error": "tekla failure"}
+
+    class _ErrClient(_CapturingClient):
+        async def post(self, url, content=None, headers=None):
+            return _ErrResp()
+
+    monkeypatch.setattr(main_mod.httpx, "AsyncClient", _ErrClient)
+    r1 = client.post("/tool-calls", headers=AUTH, json=payload)
+    assert r1.status_code == 502  # surfaced host failure
+
+    # Token spent (host may have acted) — not reopened for replay.
+    monkeypatch.setattr(main_mod.httpx, "AsyncClient", _CapturingClient)
+    r2 = client.post("/tool-calls", headers=AUTH, json=payload)
+    assert r2.json()["allowed"] is False
+
+
 def test_token_cannot_be_used_twice(monkeypatch) -> None:
     # Single-use end-to-end: once committed, the same token is refused.
     from tekla_agent import main as main_mod

@@ -12,7 +12,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from tekla_agent.approval import ApprovalSigner, NonceLedger, args_fingerprint
-from tekla_agent.audit import AuditLogger, stable_hash, verify_chain
+from tekla_agent.audit import AuditLogger, read_checkpoint, stable_hash, verify_chain
 from tekla_agent.config import settings
 from tekla_agent.llm import LLMError, OpenAICompatibleClient
 from tekla_agent.policy import ToolPolicy
@@ -666,6 +666,12 @@ async def tool_call(request: ToolCallRequest) -> ToolCallResponse:
                 dry_run=False,
             )
 
+    # Nonce lifecycle rule: only ROLL BACK (reopen for retry) when the request
+    # provably never reached the host — a pre-send connection failure. For any
+    # other outcome (an indeterminate timeout after sending, or ANY host response
+    # incl. >=400) the host may have verified and executed and burned its own
+    # nonce, so we COMMIT instead. Reopening then would let the single-use token be
+    # replayed to another host (the token is not bound to workstation_url).
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(
@@ -673,9 +679,8 @@ async def tool_call(request: ToolCallRequest) -> ToolCallResponse:
                 content=body.encode("utf-8"),
                 headers=headers,
             )
-    except httpx.HTTPError as exc:
-        # Host unreachable BEFORE it accepted the call: release the reservation so
-        # the same call can be retried without a fresh human sign-off.
+    except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
+        # Provably before the host received anything -> safe to release & retry.
         if decision.requires_approval:
             approvals.rollback(request.approval_token)
         audit.write(
@@ -683,11 +688,31 @@ async def tool_call(request: ToolCallRequest) -> ToolCallResponse:
             user=request.user,
             project_id=request.project_id,
             tool=request.tool,
+            phase="pre_send",
             reason=str(exc),
         )
         return ToolCallResponse(
             allowed=False,
             decision="blocked_workstation_unreachable",
+            reason=str(exc),
+            dry_run=False,
+        )
+    except httpx.HTTPError as exc:
+        # Indeterminate: the request may have reached the host and executed. Do NOT
+        # reopen the nonce — mark it spent so it cannot be replayed elsewhere.
+        if decision.requires_approval:
+            approvals.commit(request.approval_token)
+        audit.write(
+            "tool_call_transport_error",
+            user=request.user,
+            project_id=request.project_id,
+            tool=request.tool,
+            phase="indeterminate",
+            reason=str(exc),
+        )
+        return ToolCallResponse(
+            allowed=False,
+            decision="blocked_workstation_indeterminate",
             reason=str(exc),
             dry_run=False,
         )
@@ -697,13 +722,11 @@ async def tool_call(request: ToolCallRequest) -> ToolCallResponse:
     except ValueError:
         result = {"raw": response.text}
 
-    # Commit the nonce on acceptance (permanently spent); roll back on host
-    # rejection so the approval can be retried after the cause is fixed.
+    # The host responded, so it saw the token (and burned its own nonce if the
+    # approval verified). Commit on the orchestrator too — never reopen a token the
+    # host may have acted on, even on a >=400 (e.g. a post-verify dispatch failure).
     if decision.requires_approval:
-        if response.status_code < 400:
-            approvals.commit(request.approval_token)
-        else:
-            approvals.rollback(request.approval_token)
+        approvals.commit(request.approval_token)
 
     audit.write(
         "tool_call_completed",
@@ -729,4 +752,8 @@ async def tool_call(request: ToolCallRequest) -> ToolCallResponse:
 @app.get("/audit/verify", dependencies=[Depends(require_api_key)])
 async def audit_verify() -> dict[str, Any]:
     """Verify the tamper-evident audit chain (for ИБ review)."""
-    return verify_chain(settings.audit_log_path, hmac_key=_audit_hmac_key)
+    return verify_chain(
+        settings.audit_log_path,
+        hmac_key=_audit_hmac_key,
+        expected_head=read_checkpoint(settings.audit_log_path),
+    )

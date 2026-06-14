@@ -18,7 +18,7 @@
 | --- | --- | --- |
 | Unauthorised mutation | HMAC-signed approval tokens, bound to (tool, args, user, project), single-use, expiring | `approval.py`, re-verified in C# host |
 | Unauthenticated API access | Bearer `API_KEY`; separate `APPROVER_API_KEY` for minting approvals | `main.py` middleware |
-| Audit tampering | HMAC-keyed hash chain (`seq` + `prev_hash`, key = `AUDIT_HMAC_KEY`/`APPROVAL_SECRET`); a file-only attacker cannot recompute it; `GET /audit/verify` | `audit.py` |
+| Audit tampering | HMAC-keyed hash chain (`seq` + `prev_hash`, key = `AUDIT_HMAC_KEY`/`APPROVAL_SECRET`) + head checkpoint sidecar (catches tail truncation; export externally for full assurance); `GET /audit/verify` | `audit.py` |
 | Prompt injection / homoglyph bypass | NFKC normalisation, confusable folding, zero-width stripping, RU+EN patterns | `screening.py` |
 | Malformed / unexpected tool args | Typed Pydantic validation before policy and before the workstation | `tools.py` |
 | Substituted model weights | SHA-256 verification against `manifest.json` before serving | `serve_model.py` |

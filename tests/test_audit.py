@@ -74,6 +74,27 @@ def test_hmac_chain_fails_without_key(tmp_path: Path) -> None:
     assert not verify_chain(log)["ok"]  # plain SHA-256 cannot reproduce the HMAC
 
 
+def test_tail_truncation_detected_via_checkpoint(tmp_path: Path) -> None:
+    from tekla_agent.audit import read_checkpoint
+
+    log = tmp_path / "audit.jsonl"
+    logger = AuditLogger(log)
+    logger.write("e1", x=1)
+    logger.write("e2", x=2)
+    logger.write("e3", x=3)
+
+    # Attacker drops the newest record — the remaining prefix is still internally
+    # consistent, so the plain chain check passes...
+    lines = log.read_text(encoding="utf-8").splitlines()
+    log.write_text("\n".join(lines[:2]) + "\n", encoding="utf-8")
+    assert verify_chain(log)["ok"] is True
+
+    # ...but the checkpoint reveals the head is behind.
+    report = verify_chain(log, expected_head=read_checkpoint(log))
+    assert report["ok"] is False
+    assert report["reason"].startswith("truncated_or_rewound")
+
+
 def test_non_object_line_reported_not_crashed(tmp_path: Path) -> None:
     log = tmp_path / "audit.jsonl"
     log.write_text('"just a string, not an object"\n', encoding="utf-8")

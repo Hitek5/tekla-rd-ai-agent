@@ -45,7 +45,8 @@
 ## 5. Аудит и расследование инцидентов
 
 - ✔ Журнал orchestrator — цепочечный (tamper-evident): `prev_hash` + `seq`, хеш — **HMAC по секрету** (`AUDIT_HMAC_KEY`, иначе `APPROVAL_SECRET`), поэтому тот, у кого есть только доступ на запись в файл (без секрета), не сможет переписать записи и пересчитать цепочку.
-- ☐ Регулярная проверка целостности: `GET /audit/verify` или `AUDIT_HMAC_KEY=… python -m tekla_agent.audit data/audit/orchestrator.jsonl` → `ok: true`.
+- ☐ Регулярная проверка целостности: `GET /audit/verify` или `AUDIT_HMAC_KEY=… python -m tekla_agent.audit data/audit/orchestrator.jsonl` → `ok: true` (сверяет голову цепочки с чекпойнтом `*.head` — ловит обрезку «хвоста»).
+- ☐ Чекпойнт головы (`orchestrator.jsonl.head`) регулярно выгружается во внешний WORM/SIEM — иначе атакующий с доступом к ФС может обрезать и журнал, и чекпойнт.
 - ☐ Журналы (`orchestrator.jsonl`, `consumed-approvals.log`, `%APPDATA%/TeklaAgent/mcp-audit.jsonl`) выгружаются в SIEM/архив.
 - ☐ Ротация и резервное копирование журналов настроены; срок хранения согласован с ИБ.
 - ◐ Алерт при `verify_chain` → `ok: false` (признак вмешательства в журнал).

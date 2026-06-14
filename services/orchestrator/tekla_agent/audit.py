@@ -60,6 +60,12 @@ class AuditLogger:
     def __init__(self, path: Path, hmac_key: bytes | None = None):
         self.path = path
         self._hmac_key = hmac_key
+        # Head checkpoint sidecar: the latest (seq, hash) is mirrored here on every
+        # write. verify_chain compares against it to catch tail truncation / rewind
+        # (a valid older prefix that on its own would pass the chain check). For
+        # full assurance the checkpoint should also be exported to external WORM /
+        # SIEM, since an attacker with write access could truncate both files.
+        self.head_path = path.with_suffix(path.suffix + ".head")
         self._lock = Lock()
         self._seq, self._last_hash = self._recover_tail()
 
@@ -100,20 +106,45 @@ class AuditLogger:
             with self.path.open("a", encoding="utf-8") as handle:
                 handle.write(json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n")
 
+            self.head_path.write_text(
+                json.dumps({"seq": seq, "hash": record_hash}), encoding="utf-8"
+            )
+
             self._seq = seq
             self._last_hash = record_hash
             return record
 
 
-def verify_chain(path: Path, hmac_key: bytes | None = None) -> dict[str, Any]:
+def read_checkpoint(path: Path) -> dict[str, Any] | None:
+    """Read the head checkpoint sidecar for an audit log, if present."""
+    head_path = path.with_suffix(path.suffix + ".head")
+    if not head_path.exists():
+        return None
+    try:
+        data = json.loads(head_path.read_text(encoding="utf-8"))
+        return {"seq": int(data["seq"]), "hash": str(data["hash"])}
+    except (ValueError, KeyError, TypeError, OSError):
+        return None
+
+
+def verify_chain(
+    path: Path,
+    hmac_key: bytes | None = None,
+    expected_head: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """Validate an audit file's hash chain.
 
     Pass the same ``hmac_key`` the log was written with; without it, an HMAC chain
-    will (correctly) fail to verify. Returns a report with ``ok`` plus, on failure,
-    the first offending sequence number and a human-readable reason. Safe to run on
-    a copy exported from the air-gapped host for external (ИБ) review.
+    will (correctly) fail to verify. Pass ``expected_head`` (``{"seq", "hash"}``,
+    e.g. from :func:`read_checkpoint` or an external anchor) to also catch
+    tail-truncation / rewind: an older valid prefix verifies on its own, but its
+    head will be behind the checkpoint. Returns a report with ``ok`` plus, on
+    failure, the first offending sequence number and a human-readable reason. Safe
+    to run on a copy exported from the air-gapped host for external (ИБ) review.
     """
     if not path.exists():
+        if expected_head and int(expected_head.get("seq", 0)) > 0:
+            return {"ok": False, "records": 0, "reason": "truncated: log missing but checkpoint exists"}
         return {"ok": True, "records": 0, "reason": "empty"}
 
     prev_hash = GENESIS_HASH
@@ -166,6 +197,18 @@ def verify_chain(path: Path, hmac_key: bytes | None = None) -> dict[str, Any]:
             prev_hash = stored_hash
             count += 1
 
+    # Chain is internally consistent; now check it has not been truncated/rewound
+    # to an older valid prefix by comparing the head against the checkpoint.
+    if expected_head:
+        exp_seq = int(expected_head.get("seq", 0))
+        exp_hash = str(expected_head.get("hash", ""))
+        if count < exp_seq or (count == exp_seq and prev_hash != exp_hash):
+            return {
+                "ok": False,
+                "records": count,
+                "reason": f"truncated_or_rewound: head seq {count} behind checkpoint seq {exp_seq}",
+            }
+
     return {"ok": True, "records": count, "head_hash": prev_hash}
 
 
@@ -177,6 +220,10 @@ if __name__ == "__main__":  # pragma: no cover - CLI for ИБ review
     # Provide the HMAC key (AUDIT_HMAC_KEY, else APPROVAL_SECRET) to verify a keyed
     # chain; omit for a legacy plain-SHA-256 log.
     key = os.environ.get("AUDIT_HMAC_KEY") or os.environ.get("APPROVAL_SECRET") or ""
-    report = verify_chain(target, key.encode("utf-8") if key else None)
+    report = verify_chain(
+        target,
+        key.encode("utf-8") if key else None,
+        expected_head=read_checkpoint(target),
+    )
     print(json.dumps(report, ensure_ascii=False, indent=2))
     raise SystemExit(0 if report["ok"] else 1)
