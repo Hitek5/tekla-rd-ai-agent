@@ -41,6 +41,10 @@ def stable_hash(value: Any) -> str:
     return f"sha256:{digest}"
 
 
+class AuditIntegrityError(RuntimeError):
+    """Raised when the audit log on disk contradicts its head checkpoint."""
+
+
 def _record_hash(record_without_hash: dict[str, Any], hmac_key: bytes | None = None) -> str:
     payload = json.dumps(
         record_without_hash, ensure_ascii=False, sort_keys=True, default=str
@@ -68,6 +72,22 @@ class AuditLogger:
         self.head_path = path.with_suffix(path.suffix + ".head")
         self._lock = Lock()
         self._seq, self._last_hash = self._recover_tail()
+
+        # Fail closed if the log was truncated/rewound WHILE STOPPED: the existing
+        # checkpoint would otherwise be silently overwritten by the next write,
+        # destroying the only evidence. A checkpoint AHEAD of the recovered tail
+        # (or a hash mismatch at the same seq) means the on-disk log lost records.
+        cp = read_checkpoint(path)
+        if cp is not None and (
+            cp["seq"] > self._seq
+            or (cp["seq"] == self._seq and cp["hash"] != self._last_hash)
+        ):
+            raise AuditIntegrityError(
+                f"Audit log {path} contradicts its checkpoint "
+                f"(checkpoint seq {cp['seq']}, recovered seq {self._seq}). "
+                "The log was likely truncated or rewound while the service was "
+                "stopped. Investigate before restarting; do not delete the .head file."
+            )
 
     def _recover_tail(self) -> tuple[int, str]:
         """Read the last valid record to continue the chain after a restart."""

@@ -199,6 +199,37 @@ def _mint_beam_token():
     return beam_args, token
 
 
+def test_token_bound_to_workstation_url(monkeypatch) -> None:
+    # A token minted for one workstation must be refused for a different one
+    # (blocks cross-host replay of a leaked/uncommitted nonce).
+    from tekla_agent import main as main_mod
+
+    beam_args = {
+        "start": {"x": 0, "y": 0, "z": 0},
+        "end": {"x": 6000, "y": 0, "z": 0},
+        "profile": "HEA300",
+        "material": "S355",
+    }
+    token = client.post(
+        "/approvals",
+        headers={"X-Approver-Key": "test-approver-key"},
+        json={"tool": "CreateBeam", "args": beam_args, "user": "ivan",
+              "project_id": "P1", "approver": "lead",
+              "workstation_url": "http://arm-1.local:51234"},
+    ).json()["approval_token"]
+
+    monkeypatch.setattr(main_mod.httpx, "AsyncClient", _CapturingClient)
+    resp = client.post(
+        "/tool-calls",
+        headers=AUTH,
+        json={"tool": "CreateBeam", "args": beam_args, "user": "ivan",
+              "project_id": "P1", "approval_token": token, "dry_run": False,
+              "workstation_url": "http://attacker.local:51234"},
+    )
+    assert resp.json()["allowed"] is False
+    assert resp.json()["decision"] == "blocked_requires_approval"
+
+
 def test_indeterminate_send_consumes_token(monkeypatch) -> None:
     # A read timeout AFTER sending must NOT reopen the nonce (the host may have
     # executed) — the token is marked spent, not retryable elsewhere.

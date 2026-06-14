@@ -74,6 +74,26 @@ def test_hmac_chain_fails_without_key(tmp_path: Path) -> None:
     assert not verify_chain(log)["ok"]  # plain SHA-256 cannot reproduce the HMAC
 
 
+def test_truncation_while_stopped_fails_closed(tmp_path: Path) -> None:
+    # If the log is truncated while the service is down, re-opening the logger must
+    # fail closed (not silently overwrite the checkpoint on the next write).
+    from tekla_agent.audit import AuditIntegrityError
+
+    log = tmp_path / "audit.jsonl"
+    logger = AuditLogger(log)
+    logger.write("e1", x=1)
+    logger.write("e2", x=2)
+    logger.write("e3", x=3)
+
+    lines = log.read_text(encoding="utf-8").splitlines()
+    log.write_text("\n".join(lines[:1]) + "\n", encoding="utf-8")  # drop newest two
+
+    import pytest
+
+    with pytest.raises(AuditIntegrityError):
+        AuditLogger(log)
+
+
 def test_tail_truncation_detected_via_checkpoint(tmp_path: Path) -> None:
     from tekla_agent.audit import read_checkpoint
 

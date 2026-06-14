@@ -250,6 +250,9 @@ class MintApprovalRequest(BaseModel):
     user: str
     project_id: str
     approver: str
+    # Bind the approval to the target workstation so a leaked/uncommitted token
+    # can never be replayed to a DIFFERENT host (must match the /tool-calls URL).
+    workstation_url: str = "http://127.0.0.1:51234"
     ttl_seconds: int | None = None
 
 
@@ -521,6 +524,7 @@ async def mint_approval(request: MintApprovalRequest) -> MintApprovalResponse:
         nonce=nonce,
         ttl_seconds=ttl,
         body_sha256=body_sha,
+        workstation_url=request.workstation_url,
     )
     audit.write(
         "approval_minted",
@@ -531,6 +535,7 @@ async def mint_approval(request: MintApprovalRequest) -> MintApprovalResponse:
         approver=request.approver,
         nonce=nonce,
         ttl_seconds=ttl,
+        workstation_url=request.workstation_url,
     )
     return MintApprovalResponse(
         approval_token=token,
@@ -540,6 +545,7 @@ async def mint_approval(request: MintApprovalRequest) -> MintApprovalResponse:
             "user": request.user,
             "project_id": request.project_id,
             "args_hash": args_fingerprint(args_for_token),
+            "workstation_url": request.workstation_url,
         },
     )
 
@@ -563,6 +569,7 @@ async def tool_call(request: ToolCallRequest) -> ToolCallResponse:
             args=args_for_call,
             user=request.user,
             project_id=request.project_id,
+            workstation_url=request.workstation_url,
             consume=False,
         )
         approval_verified = verdict.valid
@@ -650,6 +657,7 @@ async def tool_call(request: ToolCallRequest) -> ToolCallResponse:
             args=args_for_call,
             user=request.user,
             project_id=request.project_id,
+            workstation_url=request.workstation_url,
         )
         if not reserved.valid:
             audit.write(

@@ -65,6 +65,9 @@ class ApprovalClaims:
     # C# host bind the token to the arguments by hashing the raw bytes it gets,
     # with no cross-language JSON re-serialisation.
     body_sha256: str = ""
+    # Target workstation the token is valid for; the orchestrator refuses to send
+    # it anywhere else, so a leaked/uncommitted nonce cannot be replayed cross-host.
+    workstation_url: str = ""
 
     def to_payload(self) -> dict[str, Any]:
         return {
@@ -77,6 +80,7 @@ class ApprovalClaims:
             "iat": self.issued_at,
             "exp": self.expires_at,
             "body_sha256": self.body_sha256,
+            "workstation_url": self.workstation_url,
         }
 
 
@@ -217,6 +221,7 @@ class ApprovalSigner:
         nonce: str,
         ttl_seconds: int | None = None,
         body_sha256: str = "",
+        workstation_url: str = "",
     ) -> str:
         now = int(self._clock())
         ttl = ttl_seconds if ttl_seconds is not None else self._default_ttl
@@ -230,6 +235,7 @@ class ApprovalSigner:
             issued_at=now,
             expires_at=now + ttl,
             body_sha256=body_sha256,
+            workstation_url=workstation_url,
         )
         payload_bytes = json.dumps(
             claims.to_payload(), ensure_ascii=False, sort_keys=True
@@ -259,6 +265,7 @@ class ApprovalSigner:
                 issued_at=int(data["iat"]),
                 expires_at=int(data["exp"]),
                 body_sha256=str(data.get("body_sha256", "")),
+                workstation_url=str(data.get("workstation_url", "")),
             )
         except (KeyError, ValueError, TypeError):
             return None
@@ -272,6 +279,7 @@ class ApprovalSigner:
         args: Any,
         user: str,
         project_id: str,
+        workstation_url: str = "",
         consume: bool = True,
     ) -> ApprovalVerdict:
         if not token:
@@ -293,6 +301,10 @@ class ApprovalSigner:
             return ApprovalVerdict(False, "user_mismatch", claims)
         if claims.project_id != project_id:
             return ApprovalVerdict(False, "project_mismatch", claims)
+        # Reject a token presented for a different workstation than it was minted
+        # for (blocks cross-host replay of a leaked/uncommitted nonce).
+        if claims.workstation_url and claims.workstation_url != workstation_url:
+            return ApprovalVerdict(False, "workstation_mismatch", claims)
         if self._ledger.is_spent(claims.nonce):
             return ApprovalVerdict(False, "already_used", claims)
 
@@ -310,6 +322,7 @@ class ApprovalSigner:
         args: Any,
         user: str,
         project_id: str,
+        workstation_url: str = "",
     ) -> ApprovalVerdict:
         """Validate a token and atomically reserve its nonce for an in-flight call.
 
@@ -318,7 +331,13 @@ class ApprovalSigner:
         transient transport failures.
         """
         verdict = self.verify(
-            token, tool=tool, args=args, user=user, project_id=project_id, consume=False
+            token,
+            tool=tool,
+            args=args,
+            user=user,
+            project_id=project_id,
+            workstation_url=workstation_url,
+            consume=False,
         )
         if not verdict.valid or verdict.claims is None:
             return verdict
