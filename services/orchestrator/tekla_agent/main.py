@@ -654,7 +654,11 @@ async def tool_call(request: ToolCallRequest) -> ToolCallResponse:
     # body_sha256 by hashing the raw request body (no re-serialisation).
     body = _canonical_body(request.tool, args_for_call)[0]
     headers = {"Content-Type": "application/json"}
-    if request.approval_token:
+    # Only forward the token when this tool actually required approval — by here it
+    # has been verified AND consumed for THIS same tool/args. Never attach a token
+    # to a read-only call (the workstation_url is caller-controlled, so forwarding
+    # an unspent token there would let it be exfiltrated and replayed).
+    if decision.requires_approval and request.approval_token:
         headers["X-Agent-Approval"] = request.approval_token
 
     async with httpx.AsyncClient(timeout=30.0) as client:
